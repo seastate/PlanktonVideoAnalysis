@@ -114,7 +114,6 @@ class SpatialFilter():
         else:
             return self.ret,None
 
-
 class FrameSequence():
     """
     A class to facilitate work combining images sequences, frames in videos and
@@ -186,7 +185,8 @@ class FrameSequence():
             self.frame_pointer += self.interval
             if self.fs_type == 'imseq':
                 self.frame = self.image_sequence[self.frame_pointer]
-            elif self.fs_type == 'imfil':                self.frame = cv2.imread(os.path.join(self.source_dir, self.image_file_list[self.frame_pointer]))
+            elif self.fs_type == 'imfil':
+                self.frame = cv2.imread(os.path.join(self.source_dir, self.image_file_list[self.frame_pointer]))
             elif self.fs_type in ['vidseq','vidfil']:
                 for i in range(self.interval):
                     self.ret,self.frame = self.video_sequence.read()
@@ -197,6 +197,54 @@ class FrameSequence():
         self.frame = np.array(self.frame)
         return self.ret,self.frame
 
+
+class BinaryFrame():
+    def __init__(self,frame=None,get_bin=True,display=False,pars=None):
+        self.pars = {'minThreshold':20,'maxThreshold':255,'display':False,'fill_holes':True,'bin_fig_num':101,'gray_fig_num':102}
+        if pars is not None:
+            self.pars.update(pars)
+        if frame is not None:
+            self.frame = frame
+            if get_bin:
+                self.binary_frame(return_bin=False,display=display)
+        #self.blobs_fig_num = fig_numBLOB
+        #self.ROI_fig_num = fig_numROI
+        # min_val=minThreshold, max_val=maxThreshold,min_area=minArea,
+        # display_ROIs=False,display_blobs=False,display_blobsCV=False,use_binary=True,
+        # fig_numROI=102,fig_numBLOB=103,fig_numCTR=104
+
+    def binary_frame(self,frame,return_bin=True,display=False):
+        self.ret = False
+        self.gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        self.bin_frame=cv2.threshold(self.gray_frame,self.pars['minThreshold'],self.pars['maxThreshold'], cv2.THRESH_BINARY)[1]
+        if self.pars['fill_holes']: # Fill holes within thresholded blobs
+            # after example at https://www.programcreek.com/python/example/89425/cv2.floodFill
+            frame_floodfill=self.bin_frame.copy()
+            # Mask used to flood filling.
+            # Notice the size needs to be 2 pixels than the image.
+            h, w = self.bin_frame.shape[:2]
+            mask = np.zeros((h+2, w+2), np.uint8)
+            # Floodfill from point (0, 0)
+            cv2.floodFill(frame_floodfill, mask, (0,0), 255);
+            # Invert floodfilled image
+            frame_floodfill_inv = cv2.bitwise_not(frame_floodfill)
+            # Combine the two images to get the foreground.
+            self.bin_frame = self.bin_frame.astype(np.uint8) | frame_floodfill_inv.astype(np.uint8)
+            #print('after:',self.binary_image)
+        self.ret = True
+        if display:
+            self.show_binary_frame()
+        if return_bin:
+            self.ret,self.bin_frame
+            
+    def show_binary_frame(self):
+        plt.figure(self.pars['gray_fig_num'])
+        plt.imshow(self.gray_frame,cmap='gray',vmin=0,vmax=255)
+        plt.figure(self.pars['bin_fig_num'])
+        plt.imshow(self.bin_frame,cmap='gray',vmin=0,vmax=255)
+
+
+"""    
 
 class Segmenter():
     def __init__(self,frame=None,pars=None, min_val=minThreshold, max_val=maxThreshold,min_area=minArea,
@@ -248,12 +296,11 @@ class Segmenter():
         self.ROIlist=[]
         self.blob_keypoints = []
 
-
         self.contours, hierarchy = cv2.findContours(self.binary_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         #self.contours, hierarchy = cv2.findContours(self.binary_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
 
-        if display_blobs:
-            self.show_blobs_frame()
+        #if display_blobs:
+        #    self.show_blobs_frame()
             
         # dimensions of image in pixels
         nx=len(self.frame_image)
@@ -289,7 +336,7 @@ class Segmenter():
                                     category=category))    
         if display_ROIs:
             self.show_ROIs_frame()
-
+"""
     
 class VideoProcessor():
     """
