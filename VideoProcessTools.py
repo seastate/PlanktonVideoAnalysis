@@ -27,7 +27,8 @@ class TemporalFilter():
             self.offset = offset
         self.BGframe_int32 = np.round(self.BGframe).astype('int32')
         self.frame_int32 = np.round(frame).astype('int32')
-        self.FGframe = np.minimum(255,np.maximum(0,self.frame_int32-self.BGframe_int32+self.offset)).astype('uint8')
+        self.FGframe = np.minimum(255,np.maximum(0,
+            self.frame_int32-self.BGframe_int32+self.offset)).astype('uint8')
         #
         if update:
             self.update(frame)
@@ -57,8 +58,14 @@ class SpatialFilter():
         self.frame_float = frame.astype('float')
         self.BGframe = np.zeros(frame.shape)
         #
-        for i in range(3):
-            self.BGframe[:,:,i] = signal.convolve2d(frame[:,:,i].astype('float'),
+        if len(frame.shape) == 3: # A color image...
+            for i in range(3):
+                self.BGframe[:,:,i] = signal.convolve2d(frame_float[:,:,i],
+                                                    self.conv_matrix,
+                                                    mode='same',boundary='fill',
+                                                    fillvalue=self.pars['fillvalue'])
+        else:   # A grayscale image
+            self.BGframe = signal.convolve2d(frame_float,
                                                     self.conv_matrix,
                                                     mode='same',boundary='fill',
                                                     fillvalue=self.pars['fillvalue'])
@@ -121,7 +128,7 @@ class FrameSequence():
     """
     def __init__(self,image_file_list=None,image_sequence=None,
                  video_file=None,video_sequence=None,
-                 source_dir=None,init=True,
+                 source_dir=None,init=True,gray_convert=False,
                  frame_pointer=0,interval=1,fs_type=None):
         self.image_file_list = image_file_list
         self.image_sequence = image_sequence
@@ -129,6 +136,7 @@ class FrameSequence():
         self.video_sequence = video_sequence
         self.source_dir = source_dir
         
+        self.gray_convert = gray_convert
         self.frame_pointer = frame_pointer
         self.interval = interval
         self.frame = None
@@ -174,6 +182,8 @@ class FrameSequence():
                 print(f'Unrecognized fs_type in initialize: {self.fs_type}')
         except Exception as e:
             print('Reading first frame failed in initialize: ',e)
+        if self.gray_convert:
+            self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
         self.frame = np.array(self.frame)
         if return_frame:
             return self.ret,self.frame
@@ -194,6 +204,8 @@ class FrameSequence():
                 print('Unrecognized fs_type in nextFrame...')
         except Exception as e:
             print('Reading next frame failed in nextFrame: ',e)
+        if self.gray_convert:
+            self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
         self.frame = np.array(self.frame)
         return self.ret,self.frame
 
@@ -215,7 +227,11 @@ class BinaryFrame():
 
     def binary_frame(self,frame,return_bin=True,display=False):
         self.ret = False
-        self.gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        # Check if image is grayscale, or needs to be converted
+        if len(frame.shape) == 3:
+            self.gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        else:
+            self.gray_frame = frame.copy()
         self.bin_frame=cv2.threshold(self.gray_frame,self.pars['minThreshold'],self.pars['maxThreshold'], cv2.THRESH_BINARY)[1]
         if self.pars['fill_holes']: # Fill holes within thresholded blobs
             # after example at https://www.programcreek.com/python/example/89425/cv2.floodFill

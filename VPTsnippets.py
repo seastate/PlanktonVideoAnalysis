@@ -16,10 +16,10 @@ fig1 = plt.figure()
 fig2 = plt.figure()
 fig3 = plt.figure()
 
-#video_name = '/home/dg/FHL2020/Pisaster_videos/8-8_surface_57d_20ppt/BTV_Movie_001.mov' #'1537773747.avi'
-#fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0)
-video_name = '/home/dg/Courses/LarvalEcology/TankDemos/GlopVideos/2019-07-24-145131.mp4'
-fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=2250)
+video_name = '/home/dg/FHL2020/Pisaster_videos/8-8_surface_57d_20ppt/BTV_Movie_001.mov' #'1537773747.avi'
+fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0,gray_convert=True)
+#video_name = '/home/dg/Courses/LarvalEcology/TankDemos/GlopVideos/2019-07-24-145131.mp4'
+#fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=2250)
 ret,frame = fseq.initialize()
 
 tf = TemporalFilter(init_frame=frame,alpha=0.01)
@@ -32,19 +32,28 @@ while ret and count<1500:
     plt.figure(fig1)
     print(f'showing frame {count}')
     plt.cla()
-    plt.imshow(frame)
-    fig1.canvas.manager.set_window_title(f'Frame {count}')
+    if len(frame.shape)==3:
+        plt.imshow(frame)
+    else:
+        plt.imshow(frame,cmap='gray', vmin=0, vmax=255)
+    fig1.canvas.manager.set_window_title(f'Image: Frame {count}')
     if count>0:
         plt.figure(fig2)
         plt.cla()
-        fig2.canvas.manager.set_window_title(f'Frame {count}')
+        fig2.canvas.manager.set_window_title(f'Background: Frame {count}')
         #plt.imshow((np.round(sf.BGframe)).astype('uint8'))
-        plt.imshow((np.round(tf.BGframe)).astype('uint8'))
+        if len(tf.BGframe.shape)==3:
+            plt.imshow((np.round(tf.BGframe)).astype('uint8'))
+        else:
+            plt.imshow((np.round(tf.BGframe)).astype('uint8'),cmap='gray', vmin=0, vmax=255)
         #
         plt.figure(fig3)
         plt.cla()
-        fig3.canvas.manager.set_window_title(f'Frame {count}')
-        plt.imshow(FGframe)
+        fig3.canvas.manager.set_window_title(f'Foreground: Frame {count}')
+        if len(FGframe.shape)==3:
+            plt.imshow(FGframe)
+        else:
+            plt.imshow(FGframe,cmap='gray', vmin=0, vmax=255)
         bf.binary_frame(FGframe,display=True)
     
     plt.pause(1e-1)
