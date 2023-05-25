@@ -43,9 +43,12 @@ class SpatialFilter():
     analysis).
     """
     def __init__(self,frame=None,get_bg=True,get_filter=True,
-                 pars={'n':11,'r':5,'ftype':'disk','offset':0,
-                       'fillvalue':0,'plot_matrix':False,'verbose':False}):
-        self.pars = pars
+                 pars=None):
+        # default parameters
+        self.pars={'n':11,'r':5,'ftype':'disk','offset':0,
+                       'fillvalue':0,'plot_matrix':False,'verbose':False}
+        if pars is not None:
+            self.pars.update(pars)
         if frame is not None:
             self.frame = frame
         if get_filter:
@@ -212,7 +215,9 @@ class FrameSequence():
 
 class BinaryFrame():
     def __init__(self,frame=None,get_bin=True,display=False,pars=None):
-        self.pars = {'minThreshold':20,'maxThreshold':255,'display':False,'fill_holes':True,'bin_fig_num':101,'gray_fig_num':102}
+        # Default parameters
+        self.pars = {'minThreshold':20,'maxThreshold':255,'display':False,'fill_holes':True,
+                     'bin_fig_num':101,'gray_fig_num':102}
         if pars is not None:
             self.pars.update(pars)
         if frame is not None:
@@ -232,7 +237,8 @@ class BinaryFrame():
             self.gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         else:
             self.gray_frame = frame.copy()
-        self.bin_frame=cv2.threshold(self.gray_frame,self.pars['minThreshold'],self.pars['maxThreshold'], cv2.THRESH_BINARY)[1]
+        self.bin_frame=cv2.threshold(self.gray_frame,self.pars['minThreshold'],self.pars['maxThreshold'],
+                                     cv2.THRESH_BINARY)[1]
         if self.pars['fill_holes']: # Fill holes within thresholded blobs
             # after example at https://www.programcreek.com/python/example/89425/cv2.floodFill
             frame_floodfill=self.bin_frame.copy()
@@ -246,12 +252,13 @@ class BinaryFrame():
             frame_floodfill_inv = cv2.bitwise_not(frame_floodfill)
             # Combine the two images to get the foreground.
             self.bin_frame = self.bin_frame.astype(np.uint8) | frame_floodfill_inv.astype(np.uint8)
-            #print('after:',self.binary_image)
+            print('after:',self.binary_frame)
         self.ret = True
         if display:
             self.show_binary_frame()
         if return_bin:
-            self.ret,self.bin_frame
+            print('got here')
+            return self.ret,self.bin_frame
             
     def show_binary_frame(self):
         plt.figure(self.pars['gray_fig_num'])
@@ -260,99 +267,39 @@ class BinaryFrame():
         plt.imshow(self.bin_frame,cmap='gray',vmin=0,vmax=255)
 
 
-"""    
-
 class Segmenter():
-    def __init__(self,frame=None,pars=None, min_val=minThreshold, max_val=maxThreshold,min_area=minArea,
-                      display_ROIs=False,display_blobs=False,display_blobsCV=False,use_binary=True,
-                             fig_numROI=102,fig_numBLOB=103,fig_numCTR=104):
-        self.frame = frame
-        self.pars = pars
-        self.blobs_fig_num = fig_numBLOB
-        self.ROI_fig_num = fig_numROI
-
-    def getFrame(frame):
-        self.frame = frame
-
-    def binary_frame(self, min_val=minThreshold, max_val=maxThreshold,display=False,fill_holes=True,fig_num=101):
-        self.binary_frame=cv2.threshold(self.frame,self.pars['min_val'],self.pars['max_val'], cv2.THRESH_BINARY)[1]
-        if fill_holes: # Fill holes within thresholded blobs
-            # after example at https://www.programcreek.com/python/example/89425/cv2.floodFill
-            frame_floodfill=self.binary_image.copy()
-            # Mask used to flood filling.
-            # Notice the size needs to be 2 pixels than the image.
-            h, w = self.binary_image.shape[:2]
-            mask = np.zeros((h+2, w+2), np.uint8)
-            # Floodfill from point (0, 0)
-            cv2.floodFill(frame_floodfill, mask, (0,0), 255);
-            # Invert floodfilled image
-            frame_floodfill_inv = cv2.bitwise_not(frame_floodfill)
-            # Combine the two images to get the foreground.
-            self.binary_image = self.binary_image.astype(np.uint8) | frame_floodfill_inv.astype(np.uint8)
-            #print('after:',self.binary_image)
-            self.binary_fig_num=fig_num
-        if display:
-            self.show_binary_frame()
-            
-    def show_binary_frame(self):
-        plt.figure(self.binary_fig_num,facecolor=tuple([i/255 for i in bg_color]))
-        plt.imshow(self.binary_image, cmap='gray')
-        plt.tight_layout(pad=plt_pad)
-        #title_str='Figure '+str(self.binary_fig_num)+ \
-        #    ',   Filename: '+self.frame_file
-        #plt.gcf().canvas.manager.set_window_title(title_str)
-    
-                                    
-    def segment(self,bin_frame=None,pars=None):
-        if bin_frame is not None:
-            self.binary_frame = bin_frame
+    def __init__(self,bin_frame=None,pars=None):
+        self.pars = {'minThreshold':20, 'maxThreshold':255, 'minArea':10, 'maxArea':5000,'ROIpad':5,
+                     'display_ROIs':False,'display_blobs':False,'display_blobsCV':False,
+                     'fig_numROI':102,'fig_numBLOB':103,'fig_numCTR':104}
         if pars is not None:
             self.pars.update(pars)
-        # 
+        self.bin_frame = bin_frame
+
+    def getFrame(self,bin_frame):
+        self.bin_frame = bin_frame
+
+    def segment(self,bin_frame=None,pars=None):
+        if bin_frame is not None:
+            self.bin_frame = bin_frame
+        ny,nx = self.bin_frame.shape  # these may be backwards!
+        ROIpad = self.pars['ROIpad']
+        if pars is not None:
+            self.pars.update(pars)
         self.ROIlist=[]
-        self.blob_keypoints = []
-
-        self.contours, hierarchy = cv2.findContours(self.binary_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
-        #self.contours, hierarchy = cv2.findContours(self.binary_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-        #if display_blobs:
-        #    self.show_blobs_frame()
-            
-        # dimensions of image in pixels
-        nx=len(self.frame_image)
-        ny=len(self.frame_image[0])
-
+        # 
+        self.contours, hierarchy = cv2.findContours(self.bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         # Parse ROIs from contours
         for ctr in self.contours:
             #print(ctr[:,0,0])
             area=cv2.contourArea(ctr)
+            # skip if area outside bounds
+            if area < self.pars['minArea'] or area > self.pars['maxArea']:
+                continue
             bbox=cv2.boundingRect(ctr)
-            try:
-                ellbox = cv2.fitEllipse(ctr)
-                ell = Ellipse((ellbox[0][0],ellbox[0][1]),ellbox[1][0],ellbox[1][1],angle=ellbox[2],
-                              linewidth=1,edgecolor='y',facecolor='none')
-                if display_ROIs:
-                    plt.gca().add_patch(ell)
-            except:
-                ellbox=None
-            i_beg=np.max([np.min(ctr[:,0,1])-ROIpad,0])
-            i_end=np.min([np.max(ctr[:,0,1])+ROIpad,nx-1])
-            j_beg=np.max([np.min(ctr[:,0,0])-ROIpad,0])
-            j_end=np.min([np.max(ctr[:,0,0])+ROIpad,ny-1])
-            
-            # get blob subimage
-            blob_img = Image.fromarray( self.color_frame_image[i_beg:i_end, j_beg:j_end])
-            #blob_img = Image.fromarray( cv2.cvtColor(self.color_frame_image[i_beg:i_end, j_beg:j_end], cv2.COLOR_BGR2RGB))
-            #blob_img = Image.fromarray( cv2.cvtColor(self.frame_image[i_beg:i_end, j_beg:j_end], cv2.COLOR_BGR2RGB))
-            #blob_img = Image.fromarray( cv2.cvtColor(self.frame_image[i_beg:i_end, j_beg:j_end], cv2.COLOR_BGR2GRAY))
-            
-            self.ROIlist.append(ROI(ROIimage=blob_img,edge=np.squeeze(ctr,axis=1),
-                                    area=area,bbox=bbox,ellbox=ellbox,
-                                    i_beg=i_beg,i_end=i_end,j_beg=j_beg,j_end=j_end,
-                                    category=category))    
-        if display_ROIs:
-            self.show_ROIs_frame()
-"""
+            mAR = cv2.minAreaRect(ctr)
+            self.ROIlist.append([area,bbox,mAR])
+        return self.ROIlist
     
 class VideoProcessor():
     """

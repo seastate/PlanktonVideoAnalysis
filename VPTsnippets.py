@@ -1,3 +1,46 @@
+
+
+# segmenter test
+
+import matplotlib
+matplotlib.use('TkAgg')
+import cv2
+import os
+import numpy as np
+from matplotlib import pyplot as plt
+from time import sleep
+
+from VideoProcessTools import FrameSequence, TemporalFilter, SpatialFilter, BinaryFrame, Segmenter
+
+
+plt.ion()
+fig1 = plt.figure()
+fig2 = plt.figure()
+fig3 = plt.figure()
+
+video_name = '1537773747.avi'
+fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0,gray_convert=False,interval=20)
+bf = BinaryFrame(pars = {'minThreshold':10,'maxThreshold':255,'fill_holes':False},display=True)
+seg = Segmenter()
+
+ret,frame = fseq.initialize()
+
+
+ret,binframe = bf.binary_frame(frame,display=True)
+seg.getFrame(binframe)
+ROIlist = seg.segment()
+
+
+bin_frame=cv2.threshold(gray_frame,120,255, cv2.THRESH_BINARY)[1]
+plt.figure(101)
+plt.imshow(bin_frame,cmap='gray', vmin=0, vmax=255)
+
+gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+plt.figure(102)
+plt.imshow(gray_frame,cmap='gray', vmin=0, vmax=255)
+
+
+
 # temporal filter example
 
 import matplotlib
@@ -16,10 +59,15 @@ fig1 = plt.figure()
 fig2 = plt.figure()
 fig3 = plt.figure()
 
-video_name = '/home/dg/FHL2020/Pisaster_videos/8-8_surface_57d_20ppt/BTV_Movie_001.mov' #'1537773747.avi'
-fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0,gray_convert=True)
+video_name = '1537773747.avi'
+fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0,gray_convert=True,interval=20)
+#video_name = '/home/dg/FHL2020/Pisaster_videos/8-8_surface_57d_20ppt/BTV_Movie_001.mov'
+#fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0,gray_convert=True)
 #video_name = '/home/dg/Courses/LarvalEcology/TankDemos/GlopVideos/2019-07-24-145131.mp4'
 #fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=2250)
+video_name = '/home/dg/PublicSensors/Instruments/Deployments/Duamish/MOVI0966.AVI'
+fseq = FrameSequence(video_file=video_name,init=False,frame_pointer=0,gray_convert=False)
+
 ret,frame = fseq.initialize()
 
 tf = TemporalFilter(init_frame=frame,alpha=0.01)
@@ -71,6 +119,15 @@ plt.figure(101)
 plt.imshow(bin_frame,cmap='gray', vmin=0, vmax=255)
 
 
+
+
+while ret and count<1500:
+    plt.pause(1e-1)
+    #cv2.imwrite("Frames/frame%d.jpg" % count, frame)     # save frame as JPEG file      
+    ret,frame = fseq.nextFrame()
+    FGframe = tf.subtract(frame)
+    bf.binary_frame(FGframe,display=True)
+    count += 1
 
 
 ================================================================================
