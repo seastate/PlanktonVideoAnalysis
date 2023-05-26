@@ -12,28 +12,66 @@ class TemporalFilter():
     """
     A class to implement accumulation of a background frame through temporal 
     filtering, and its use to isolate foreground (moving objects in video
-    analysis).
+    analysis). It is assumed that frame arrays have been converted to float,
+    to avoid cumulative rounding errors.
     """
-    def __init__(self,init_frame=None,alpha=0.1,offset=128):
-        self.BGframe = init_frame.astype('float')
-        self.alpha = alpha
-        self.offset = offset
+    def __init__(self,init_frame,pars={}):
+        # default aprameters
+        self.pars = {'alpha':0.1,'offset':128,
+                     'mode':'subtract','update':True,'display':False}
+        if bool(pars):
+            self.pars.update(pars)
+        self.TFframe = init_frame #.astype('float')
+        if bool(self.pars['display']):
+            self.fig = plt.figure()
+            if self.pars['mode'] == 'subtract':
+                self.fig2 = plt.figure()
 
     def update(self,frame):
-        self.BGframe = (1.-self.alpha)*self.BGframe + self.alpha*frame.astype('float')
+        self.TFframe = (1.-self.pars['alpha'])*self.TFframe + \
+                        self.pars['alpha']*frame
 
-    def subtract(self,frame,offset=None,update=True):
-        if offset is not None:
-            self.offset = offset
-        self.BGframe_int32 = np.round(self.BGframe).astype('int32')
-        self.frame_int32 = np.round(frame).astype('int32')
-        self.FGframe = np.minimum(255,np.maximum(0,
-            self.frame_int32-self.BGframe_int32+self.offset)).astype('uint8')
-        #
-        if update:
+    def display(self):
+        plt.figure(self.fig)
+        self.fig.clf()
+        if len(self.TFframe.shape) == 3: # A color image...
+            plt.imshow(np.round(self.TFframe).astype('uint8'))
+        else:
+            plt.imshow(np.round(self.TFframe).astype('uint8'),cmap='gray', vmin=0, vmax=255)
+        # If subtract mode, also plot result
+        if self.pars['mode'] == 'replace':
+            self.fig.canvas.manager.set_window_title(f'Temporal Filter result')
+        plt.pause(1e-2)
+        if self.pars['mode'] == 'subtract':
+            self.fig.canvas.manager.set_window_title(f'Temporal Filter background')
+            plt.figure(self.fig2)
+            self.fig2.clf()
+            if len(self.result.shape) == 3: # A color image...
+                plt.imshow(np.round(self.result).astype('uint8'))
+            else:
+                plt.imshow(np.round(self.result).astype('uint8'),cmap='gray', vmin=0, vmax=255)
+            self.fig2.canvas.manager.set_window_title(f'Temporal Filter result')
+            plt.pause(1e-2)
+
+        
+    def apply(self,frame):
+        self.ret = False
+        if self.pars['update'] == True:
             self.update(frame)
-        #
-        return self.FGframe
+        if self.pars['mode'] == 'replace':
+            self.result = self.TFframe
+            #self.result = np.round(self.TFframe).astype('uint8')
+        if self.pars['mode'] == 'subtract':
+            self.result = np.minimum(255.,np.maximum(0.,frame-self.TFframe))
+        else:
+            print(f"Unrecognized mode {self.pars['mode']}; aborting...")
+            return self.ret,None
+        if bool(self.pars['offset']):
+            self.result += self.pars['offset']
+        if bool(self.pars['display']):
+            self.display()
+        self.ret = True
+        return self.ret,self.result
 
 
 class SpatialFilter():
@@ -42,46 +80,49 @@ class SpatialFilter():
     filtering, and its use to isolate foreground (moving objects in video
     analysis).
     """
-    def __init__(self,frame=None,get_bg=True,get_filter=True,
-                 pars=None):
+    def __init__(self,pars={}):
         # default parameters
         self.pars={'n':11,'r':5,'ftype':'disk','offset':0,
-                       'fillvalue':0,'plot_matrix':False,'verbose':False}
-        if pars is not None:
+                   'fillvalue':0,'plot_matrix':False,'verbose':False,
+                   'get_sf':False,'get_filter':True,
+                   'offset':None,'update':True,'mode':'subtract','display':False}
+        if bool(pars):
             self.pars.update(pars)
-        if frame is not None:
-            self.frame = frame
-        if get_filter:
+        if self.pars['get_filter']:
             self.getFilter()
-            if get_bg and frame is not None:
-                self.getBG(frame,return_bg=False)
+        if bool(self.pars['display']):
+            self.fig = plt.figure()
+            if self.pars['mode'] == 'subtract':
+                self.fig2 = plt.figure()
 
-    def getBG(self,frame,return_bg=True):
+    def getSF(self,frame,return_sf=False):
         self.ret = False
-        self.frame_float = frame.astype('float')
-        self.BGframe = np.zeros(frame.shape)
+        #self.frame_float = frame.astype('float')
         #
         if len(frame.shape) == 3: # A color image...
+            self.SFframe = np.zeros(frame.shape)
             for i in range(3):
-                self.BGframe[:,:,i] = signal.convolve2d(frame_float[:,:,i],
-                                                    self.conv_matrix,
-                                                    mode='same',boundary='fill',
-                                                    fillvalue=self.pars['fillvalue'])
+                self.SFframe[:,:,i] = signal.convolve2d(frame[:,:,i],
+                                                        self.conv_matrix,
+                                                        mode='same',boundary='fill',
+                                                        fillvalue=self.pars['fillvalue'])
         else:   # A grayscale image
-            self.BGframe = signal.convolve2d(frame_float,
-                                                    self.conv_matrix,
-                                                    mode='same',boundary='fill',
-                                                    fillvalue=self.pars['fillvalue'])
+            self.SFframe = signal.convolve2d(frame,self.conv_matrix,
+                                             mode='same',boundary='fill',
+                                             fillvalue=self.pars['fillvalue'])
         self.ret = True
-        if return_bg:
-            return self.ret,self.BGframe
+        if return_sf:
+            return self.ret,self.SFframe
 
-    def getFilter(self,pars=None):
+    def getFilter(self,pars={}):
         self.conv_matrix = None
-        if pars is not None:
+        if bool(pars):
             self.pars.update(pars)
         if self.pars['ftype']=='disk':
             self.getDiskFilter(verbose=self.pars['verbose'])
+        else:
+            print('Unrecognized filter type...aborting')
+            return False
         if self.pars['plot_matrix']:
             plt.figure()
             plt.imshow(self.conv_matrix)
@@ -106,24 +147,49 @@ class SpatialFilter():
             print(f'Disk filter: using n_mid = {self.n_mid}')
             print(self.conv_matrix)
 
-    def apply(self,frame,offset=None,update=True,mode='subtract'):
-        self.ret = False
-        if offset is not None:
-            self.offset = offset
-        if update:
-            self.getBG(frame)
-        self.BGframe_int32 = np.round(self.BGframe).astype('int32') + self.offset
-        if mode == 'replace':
-            self.ret = True
-            return self.ret,self.BGframe_int32.astype('uint8')
-        elif mode == 'subtract':
-            self.frame_int32 = np.round(frame).astype('int32')
-            self.FGframe = np.minimum(255,np.maximum(0,self.frame_int32-self.BGframe_int32+self.offset)).astype('uint8')
-            self.ret = True
-            return self.ret,self.FGframe
+    def display(self):
+        plt.figure(self.fig)
+        self.fig.clf()
+        if len(self.SFframe.shape) == 3: # A color image...
+            plt.imshow(np.round(self.SFframe).astype('uint8'))
         else:
+            plt.imshow(np.round(self.SFframe).astype('uint8'),cmap='gray', vmin=0, vmax=255)
+        if self.pars['mode'] == 'replace':
+            self.fig.canvas.manager.set_window_title(f'Spatial Filter result')
+        plt.pause(1e-2)
+        # If subtract mode, also plot result
+        if self.pars['mode'] == 'subtract':
+            self.fig.canvas.manager.set_window_title(f'Spatial Filter background')
+            plt.figure(self.fig2)
+            self.fig2.clf()
+            if len(self.result.shape) == 3: # A color image...
+                plt.imshow(np.round(self.result).astype('uint8'))
+            else:
+                plt.imshow(np.round(self.result).astype('uint8'),cmap='gray', vmin=0, vmax=255)
+            self.fig2.canvas.manager.set_window_title(f'Spatial Filter result')
+        plt.pause(1e-2)
+        
+    def apply(self,frame):
+        self.ret = False
+        if self.pars['update']:
+            self.getSF(frame)
+        #self.SFframe_int32 = np.round(self.SFframe).astype('int32')
+        if self.pars['mode'] == 'replace':
+            self.result = self.SFframe
+        elif self.pars['mode'] == 'subtract':
+            #self.frame_int32 = np.round(frame).astype('int32')
+            self.result = np.minimum(255.,np.maximum(0.,frame-self.SFframe))
+        else:
+            print(f"Unrecognized mode {self.pars['mode']}; aborting...")
             return self.ret,None
+        if bool(self.pars['offset']):
+            self.result += self.pars['offset']
+        if bool(self.pars['display']):
+            self.display()
+        self.ret = True
+        return self.ret,self.result
 
+    
 class FrameSequence():
     """
     A class to facilitate work combining images sequences, frames in videos and
@@ -132,7 +198,8 @@ class FrameSequence():
     def __init__(self,image_file_list=None,image_sequence=None,
                  video_file=None,video_sequence=None,
                  source_dir=None,init=True,gray_convert=False,
-                 frame_pointer=0,interval=1,fs_type=None):
+                 frame_pointer=0,interval=1,fs_type=None,
+                 float_convert=False):
         self.image_file_list = image_file_list
         self.image_sequence = image_sequence
         self.video_file = video_file
@@ -140,6 +207,7 @@ class FrameSequence():
         self.source_dir = source_dir
         
         self.gray_convert = gray_convert
+        self.float_convert = float_convert
         self.frame_pointer = frame_pointer
         self.interval = interval
         self.frame = None
@@ -182,12 +250,15 @@ class FrameSequence():
                 for i in range(self.frame_pointer+1):
                     self.ret,self.frame = self.video_sequence.read()
             else:
-                print(f'Unrecognized fs_type in initialize: {self.fs_type}')
+                print(f'Unrecognized frame sequence type (fs_type) in initialize: {self.fs_type}')
         except Exception as e:
             print('Reading first frame failed in initialize: ',e)
         if self.gray_convert:
             self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
-        self.frame = np.array(self.frame)
+        self.frame = np.array(self.frame) # convert image object to plain array
+        if self.float_convert:
+            self.frame = self.frame.astype('float')
+        self.ret = True
         if return_frame:
             return self.ret,self.frame
     
@@ -210,33 +281,29 @@ class FrameSequence():
         if self.gray_convert:
             self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
         self.frame = np.array(self.frame)
+        if self.float_convert:
+            self.frame = self.frame.astype('float')
+        #self.ret = True # comment out to preserve the ret from imread
         return self.ret,self.frame
 
 
 class BinaryFrame():
-    def __init__(self,frame=None,get_bin=True,display=False,pars=None):
+    def __init__(self,pars={}):
         # Default parameters
         self.pars = {'minThreshold':20,'maxThreshold':255,'display':False,'fill_holes':True,
                      'bin_fig_num':101,'gray_fig_num':102}
-        if pars is not None:
+        if bool(pars):
             self.pars.update(pars)
-        if frame is not None:
-            self.frame = frame
-            if get_bin:
-                self.binary_frame(return_bin=False,display=display)
-        #self.blobs_fig_num = fig_numBLOB
-        #self.ROI_fig_num = fig_numROI
-        # min_val=minThreshold, max_val=maxThreshold,min_area=minArea,
-        # display_ROIs=False,display_blobs=False,display_blobsCV=False,use_binary=True,
-        # fig_numROI=102,fig_numBLOB=103,fig_numCTR=104
+        if bool(self.pars['display']):
+            self.fig = plt.figure()
 
-    def binary_frame(self,frame,return_bin=True,display=False):
+    def apply(self,frame,return_bin=True):
         self.ret = False
         # Check if image is grayscale, or needs to be converted
         if len(frame.shape) == 3:
-            self.gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            self.gray_frame = cv2.cvtColor(frame.astype('uint8'), cv2.COLOR_BGR2GRAY)
         else:
-            self.gray_frame = frame.copy()
+            self.gray_frame = frame.astype('uint8')
         self.bin_frame=cv2.threshold(self.gray_frame,self.pars['minThreshold'],self.pars['maxThreshold'],
                                      cv2.THRESH_BINARY)[1]
         if self.pars['fill_holes']: # Fill holes within thresholded blobs
@@ -252,45 +319,36 @@ class BinaryFrame():
             frame_floodfill_inv = cv2.bitwise_not(frame_floodfill)
             # Combine the two images to get the foreground.
             self.bin_frame = self.bin_frame.astype(np.uint8) | frame_floodfill_inv.astype(np.uint8)
-            print('after:',self.binary_frame)
         self.ret = True
-        if display:
-            self.show_binary_frame()
+        if self.pars['display']:
+            self.display()
         if return_bin:
-            print('got here')
             return self.ret,self.bin_frame
-            
-    def show_binary_frame(self):
-        plt.figure(self.pars['gray_fig_num'])
-        plt.imshow(self.gray_frame,cmap='gray',vmin=0,vmax=255)
-        plt.figure(self.pars['bin_fig_num'])
+
+    def display(self):
+        plt.figure(self.fig)
+        self.fig.clf()
         plt.imshow(self.bin_frame,cmap='gray',vmin=0,vmax=255)
+        self.fig.canvas.manager.set_window_title(f'Binary Frame result')
+        plt.pause(1e-2)
 
 
 class Segmenter():
-    def __init__(self,bin_frame=None,pars=None):
+    def __init__(self,pars={}):
         self.pars = {'minThreshold':20, 'maxThreshold':255, 'minArea':10, 'maxArea':5000,'ROIpad':5,
                      'display_ROIs':False,'display_blobs':False,'display_blobsCV':False,
                      'fig_numROI':102,'fig_numBLOB':103,'fig_numCTR':104}
-        if pars is not None:
+        if bool(pars):
             self.pars.update(pars)
-        self.bin_frame = bin_frame
 
-    def getFrame(self,bin_frame):
-        self.bin_frame = bin_frame
-
-    def segment(self,bin_frame=None,pars=None):
-        if bin_frame is not None:
-            self.bin_frame = bin_frame
-        ny,nx = self.bin_frame.shape  # these may be backwards!
-        ROIpad = self.pars['ROIpad']
-        if pars is not None:
-            self.pars.update(pars)
-        self.ROIlist=[]
+    def apply(self,bin_frame):
+        self.ret = False
+        ny,nx = bin_frame.shape  # these may be backwards!
+        self.ROIlist=[] # clear ROI list at each call
         # 
-        self.contours, hierarchy = cv2.findContours(self.bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
+        self.contours, hierarchy = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         # Parse ROIs from contours
-        for ctr in self.contours:
+        for i,ctr in enumerate(self.contours):
             #print(ctr[:,0,0])
             area=cv2.contourArea(ctr)
             # skip if area outside bounds
@@ -298,20 +356,81 @@ class Segmenter():
                 continue
             bbox=cv2.boundingRect(ctr)
             mAR = cv2.minAreaRect(ctr)
-            self.ROIlist.append([area,bbox,mAR])
-        return self.ROIlist
+            self.ROIlist.append([i,area,bbox,mAR])
+        self.ret = True
+        return self.ret,self.ROIlist
     
 class VideoProcessor():
     """
     A class implementing background subtraction and other processing of
     videos and image sequences to facilitate tracking and classification
     of moving objects.
+
+    During processing, the active frame is propagated as a float array 
+    with the same dimensions as the original frame, to prevent cumulative
+    rounding errors. As a final step, it is converted to the original uint8
+    data type.
     """
-    def __init__(self, video_name = None, image_dir = None,pars_list=[]):
+    def __init__(self, video_name = None, image_dir = None,
+                 pars=None,proc_seq=[],proc_objs=[],verbosity=1):
         
-        self.frame = None
+        self.proc_seq = proc_seq
+        self.proc_objs = proc_objs
 
+        self.verbosity = verbosity
+        self.frame_count = 0
 
-    def FilterFrame(inframe=None):
-        pass
-                
+    #def addProcessStep(self,ps_type,pars={}):
+    #    self.proc_seq.append([ps_type,pars])
+        
+    def addFrameSequence(self,fseq):
+        #self.proc_seq.append(['FrameSequence',pars])
+        self.fseq = fseq
+        self.ret,self.frame = self.fseq.initialize()
+
+    def addTemporalFilter(self,pars={}):
+        self.proc_seq.append(['TemporalFilter',pars])
+        self.proc_objs.append(TemporalFilter(self.frame,pars=pars))
+
+    def addSpatialFilter(self,pars={}):
+        self.proc_seq.append(['SpatialFilter',pars])
+        self.proc_objs.append(SpatialFilter(pars=pars))
+
+    def addBinaryFrame(self,pars={}):
+        self.proc_seq.append(['BinaryFrame',pars])
+        self.proc_objs.append(BinaryFrame(pars=pars))
+        
+    def addSegmenter(self,pars={}):
+        self.proc_seq.append(['Segmenter',pars])
+        self.proc_objs.append(Segmenter(pars=pars))
+        
+    def processFrame(self,inframe=None):
+        if bool(inframe):
+            ret = True
+            self.result = inframe
+        else:
+            ret,self.result = self.fseq.nextFrame()
+        self.frame_count += 1
+        for i,proc_obj in enumerate(self.proc_objs):
+            if not ret:
+                return False, None
+            print(f'Processing step {i}')
+            ret,self.result = proc_obj.apply(self.result)
+        return ret,self.result
+    
+    def outputFrame(self):
+        if self.verbosity>0:
+            print(f'Frame count = {self.frame_count}')
+        if self.verbosity > 2:
+            print(self.result)
+            
+    def processSequence(self,maxFrame=5000):
+        count = 0
+        while count<maxFrame:
+            ret,self.frame = self.processFrame()
+            if not ret:
+                break
+            self.outputFrame()
+        print(f'Exiting after processing {self.frame_count} frames.')
+
+                              

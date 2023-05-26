@@ -197,8 +197,22 @@ while ret and count<1500:
 
 
 
+======================================================================
 
-
+    """
+    def subtract(self,frame,offset=None,update=True):
+        if bool(self.pars['offset']:
+            self.offset = offset
+        self.TFframe_int32 = np.round(self.TFframe).astype('int32')
+        self.frame_int32 = np.round(frame).astype('int32')
+        self.FGframe = np.minimum(255,np.maximum(0,
+            self.frame_int32-self.TFframe_int32+self.offset)).astype('uint8')
+        #
+        if update:
+            self.update(frame)
+        #
+        return self.FGframe
+    """
 
 
 
