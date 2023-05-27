@@ -8,6 +8,20 @@ from time import sleep
 from scipy import signal
 from math import floor,sqrt
 
+# Dictionaries of output headers and formats
+part_fmts = {'fos-part':'f"{self.fseq.frame_pointer},{self.fseq.time},1,{mAR[1][0]},{mAR[1][0]},{area},{i},{bbox[2]},{bbox[3]},{min(mAR[1])},{max(mAR[1])},{mAR[2]+90.},{mAR[2]},{mAR[1][1]/(mAR[1][0]+1.e-16)},{mAR[1][1]},{mAR[2]+90.},{mAR[1][0]},{mAR[2]},{mAR[2]},{mAR[1][1]/(mAR[1][0]+1.e-16)}"'
+}
+part_hdrs = {'fos-part':"% Frame #, Time, Camera #, X, Y, Area, Particle #, Bounding Box Width, Bounding Box Height, Min Dim, Max Dim, Min Dim Angle, Max Dim Angle, Max / Min, Length, Length Angle, Width, Width Angle, Length / Width"}
+
+#[99, 11.0, (241, 623, 7, 6), ((243.70004272460938, 625.6000366210938), (7.155416965484619, 3.130495071411133), 26.56505012512207)]
+
+#% Frame #, Time, Camera #, X, Y, Area, Particle #, Bounding Box Width, Bounding Box Height, Min Dim, Max Dim, Min Dim Angle, Max Dim Angle, Max / Min, Length, Length Angle, Width, Width Angle, Length / Width
+
+#part_str =  "%i,%f,%i,%f,%f,%i,%i,%i,%i,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f" % \
+#    (self.fseq.frame_pointer, self.time, self.cameraNo, self.pos.x, self.pos.y, self.area, self.partNo, self.boundWidth, self.boundHeight, self.minDim, self.maxDim, self.minDimAngle, self.maxDimAngle, self.max2min, self.length, self.lengthAngle, self.width, self.widthAngle, self.length2width)
+
+
+
 class TemporalFilter():
     """
     A class to implement accumulation of a background frame through temporal 
@@ -195,41 +209,47 @@ class FrameSequence():
     A class to facilitate work combining images sequences, frames in videos and
     lists of image files during image processing.
     """
-    def __init__(self,image_file_list=None,image_sequence=None,
-                 video_file=None,video_sequence=None,
-                 source_dir=None,init=True,gray_convert=False,
-                 frame_pointer=0,interval=1,fs_type=None,
-                 float_convert=False):
-        self.image_file_list = image_file_list
-        self.image_sequence = image_sequence
-        self.video_file = video_file
-        self.video_sequence = video_sequence
-        self.source_dir = source_dir
+    def __init__(self,pars={}):
+        self.pars={'image_file_list':None,'image_sequence':None,
+                 'video_file':None,'video_sequence':None,
+                 'source_dir':None,'init':True,'gray_convert':False,
+                 'frame_pointer':0,'interval':1,'fs_type':None,
+                 'float_convert':False,'fps':30.}
+        if bool(pars):
+            self.pars.update(pars)
+        self.image_file_list = self.pars['image_file_list']
+        self.image_sequence = self.pars['image_sequence']
+        self.video_file = self.pars['video_file']
+        self.video_sequence = self.pars['video_sequence']
+        self.source_dir = self.pars['source_dir']
         
-        self.gray_convert = gray_convert
-        self.float_convert = float_convert
-        self.frame_pointer = frame_pointer
-        self.interval = interval
+        self.gray_convert = self.pars['gray_convert']
+        self.float_convert = self.pars['float_convert']
+        self.frame_pointer = self.pars['frame_pointer']
+        self.interval = self.pars['interval']
         self.frame = None
         self.video = None
         self.ret = None
+        self.fps = self.pars['fps']
+        # Add accounting for time
+        self.time = self.frame_pointer * self.fps
         
         # Set type of frame sequence. If not set explicitly, the type is determined
         # by the first of the following arguments that is not None:
-        if fs_type is not None:
-            self.fs_type = fs_type
-        elif image_sequence is not None:
+        if self.pars['fs_type'] is not None:
+            self.fs_type = self.pars['fs_type']
+        elif self.pars['image_sequence'] is not None:
             self.fs_type = 'imseq'
-        elif image_file_list is not None:
+        elif self.pars['image_file_list'] is not None:
             self.fs_type = 'imfil'
-        elif video_sequence is not None:
+        elif self.pars['video_sequence'] is not None:
             self.fs_type = 'vidseq'
-        elif video_file is not None:
+        elif self.pars['video_file'] is not None:
             self.fs_type = 'vidfil'
         else:
             print('Frame sequence type not set: manually set attribute ' + \
                   'fs_type to imseq, imfil, vidseq or vidfil')
-        if init:
+        if self.pars['init']:
             self.initialize(return_frame=False)
         
     def initialize(self,return_frame=True):
@@ -267,6 +287,7 @@ class FrameSequence():
         self.frame = None
         try:
             self.frame_pointer += self.interval
+            self.time = self.frame_pointer * self.fps
             if self.fs_type == 'imseq':
                 self.frame = self.image_sequence[self.frame_pointer]
             elif self.fs_type == 'imfil':
@@ -359,7 +380,40 @@ class Segmenter():
             self.ROIlist.append([i,area,bbox,mAR])
         self.ret = True
         return self.ret,self.ROIlist
-    
+'''
+class ROIwriter():
+    def __init__(self,pars={}):
+        self.pars = {'export_file':None,'fmt':'fos-part',
+                     'export_ROIs':False,'output_dir':None,'output_prefix':None,'ROIpad':5}
+        if bool(pars):
+            self.pars.update(pars)
+        if bool(self.pars['export_ROIs']:
+            if bool(self.pars['output_dir']) == False:
+                print('ROIwrite init failed: an ouput directory is required...')
+                return False, None
+            if bool(self.pars['output_prefix']) == False:
+                print('ROIwrite init failed: an ouput prefix is required...')
+                return False, None
+        if bool(self.pars['export_file']:
+            self.outfile = open(self.pars['export_file'],'w')
+            self.outfile.write(part_hdrs[self.pars['fmt']])
+        
+                
+    def apply(self,ROIlist):
+        self.ret = False
+        self.ROIlist = ROIlist
+        # Parse ROIs from contours
+        for i,roi_stats in enumerate(self.ROIlist):
+                [i,area,bbox,mAR] = roi_stats
+                if bool(self.pars['export_file']:
+                    self.outfile.write(part_fmts[self.pars['fmt']])
+                if bool(self.pars['export_ROIs']:
+                        output_suffix = f'_'
+                        ROIfilename = os.path.join(self.pars['output_dir'],self.pars['output_prefix'],output_suffix)
+        self.ret = True
+        return self.ret,self.ROIlist
+'''    
+
 class VideoProcessor():
     """
     A class implementing background subtraction and other processing of
@@ -373,17 +427,33 @@ class VideoProcessor():
     """
     def __init__(self, video_name = None, image_dir = None,
                  pars=None,proc_seq=[],proc_objs=[],verbosity=1):
-        
+        self.pars = {'export_file':None,'fmt':'fos-part',
+                     'export_ROIs':False,'output_dir':None,'output_prefix':None,'ROIpad':5,
+                     'retain_result':None}
+        if bool(pars):
+            self.pars.update(pars)
+        if bool(self.pars['export_ROIs']):
+            if bool(self.pars['output_dir']) == False:
+                print('ROIwrite init failed: an ouput directory is required...')
+                return False, None
+            if bool(self.pars['output_prefix']) == False:
+                print('ROIwrite init failed: an ouput prefix is required...')
+                return False, None
+        if bool(self.pars['export_file']):
+            self.outfile = open(self.pars['export_file'],'w')
+            self.outfile.write(part_hdrs[self.pars['fmt']])
+
         self.proc_seq = proc_seq
         self.proc_objs = proc_objs
 
         self.verbosity = verbosity
         self.frame_count = 0
+        self.ROIlist = []
 
     #def addProcessStep(self,ps_type,pars={}):
     #    self.proc_seq.append([ps_type,pars])
         
-    def addFrameSequence(self,fseq):
+    def addFrameSequence(self,fseq,pars={}):
         #self.proc_seq.append(['FrameSequence',pars])
         self.fseq = fseq
         self.ret,self.frame = self.fseq.initialize()
@@ -404,33 +474,77 @@ class VideoProcessor():
         self.proc_seq.append(['Segmenter',pars])
         self.proc_objs.append(Segmenter(pars=pars))
         
+    def addROIwriter(self,pars={}):
+        self.proc_seq.append(['ROIwriter',pars])
+        self.proc_objs.append(ROIwriter(pars=pars))
+        
     def processFrame(self,inframe=None):
         if bool(inframe):
             ret = True
             self.result = inframe
         else:
             ret,self.result = self.fseq.nextFrame()
-        self.frame_count += 1
+        # Save specified frame for extracting ROIs
+        if not bool(self.pars['retain_result']):
+            self.retain_result = self.result.copy()
+        self.frame_count += self.fseq.interval
+        #self.frame_count += 1
         for i,proc_obj in enumerate(self.proc_objs):
             if not ret:
                 return False, None
             print(f'Processing step {i}')
             ret,self.result = proc_obj.apply(self.result)
+            # Save specified frame for extracting ROIs
+            if self.pars['retain_result'] == i:
+                print('retaining result, i = {i}, proc = {self.proc_seq[i][0]}')
+                self.retain_result = self.result.copy()
+            if self.proc_seq[i][0] == 'Segmenter':
+                self.ROIlist = proc_obj.ROIlist
         return ret,self.result
     
     def outputFrame(self):
         if self.verbosity>0:
-            print(f'Frame count = {self.frame_count}')
+            print(f'Frame number, time = {self.fseq.frame_pointer}, {self.fseq.time}')
         if self.verbosity > 2:
             print(self.result)
-            
+        # Output of ROIs (if any) to stats file and image directory
+        for i,roi_stats in enumerate(self.ROIlist):
+            print('Got here: ',i,roi_stats)
+            [i,area,bbox,mAR] = roi_stats
+            if bool(self.pars['export_file']):
+                output_format = eval(part_fmts[self.pars['fmt']])+'\n'
+                print(output_format)
+                self.outfile.write(output_format)
+            if bool(self.pars['export_ROIs']):
+                # Calculate ROI for export
+                ns = self.retain_result.shape  # these may be backwards!
+                ny,nx = ns[0:2]
+                i_beg=np.max([bbox[0]-self.pars['ROIpad'],0])
+                i_end=np.min([bbox[0]+bbox[2]+self.pars['ROIpad'],nx-1])
+                j_beg=np.max([bbox[1]-self.pars['ROIpad'],0])
+                j_end=np.min([bbox[1]+bbox[3]+self.pars['ROIpad'],ny-1])
+                print(i_beg,i_end,j_beg,j_end)
+                output_filename = f"{self.pars['output_prefix']}_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}.tif"
+                self.ROIfilename = os.path.join(self.pars['output_dir'],output_filename)
+                #output_suffix = f'_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}.tif'
+                #self.ROIfilename = os.path.join(self.pars['output_dir'],self.pars['output_prefix'],output_suffix)
+                self.ROIimage = self.retain_result[j_beg:j_end,i_beg:i_end]
+                print('writing roi: ',self.ROIfilename)
+                ret = cv2.imwrite(self.ROIfilename,np.round(self.ROIimage).astype('uint8'))
+                print('imwrite ret = ',ret)
+
+    def cleanup(self):
+        if bool(self.pars['export_file']):
+            self.outfile.close()
+                
     def processSequence(self,maxFrame=5000):
         count = 0
         while count<maxFrame:
             ret,self.frame = self.processFrame()
+            count += 1
             if not ret:
                 break
             self.outputFrame()
         print(f'Exiting after processing {self.frame_count} frames.')
-
+        self.cleanup()
                               
