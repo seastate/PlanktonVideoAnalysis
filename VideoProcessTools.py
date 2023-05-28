@@ -7,6 +7,7 @@ from matplotlib import pyplot as plt
 from time import sleep
 from scipy import signal
 from math import floor,sqrt
+import json
 
 # Dictionaries of output headers and formats
 part_fmts = {'fos-part':'f"{self.fseq.frame_pointer},{self.fseq.time},1,{mAR[1][0]},{mAR[1][0]},{area},{i},{bbox[2]},{bbox[3]},{min(mAR[1])},{max(mAR[1])},{mAR[2]+90.},{mAR[2]},{mAR[1][1]/(mAR[1][0]+1.e-16)},{mAR[1][1]},{mAR[2]+90.},{mAR[1][0]},{mAR[2]},{mAR[2]},{mAR[1][1]/(mAR[1][0]+1.e-16)}"'
@@ -282,7 +283,7 @@ class FrameSequence():
         if return_frame:
             return self.ret,self.frame
     
-    def nextFrame(self):
+    def apply(self,placeholder):
         self.ret = False
         self.frame = None
         try:
@@ -296,9 +297,9 @@ class FrameSequence():
                 for i in range(self.interval):
                     self.ret,self.frame = self.video_sequence.read()
             else:
-                print('Unrecognized fs_type in nextFrame...')
+                print('Unrecognized fs_type in FrameSequence.apply...')
         except Exception as e:
-            print('Reading next frame failed in nextFrame: ',e)
+            print('Reading next frame failed in FrameSequence.apply: ',e)
         if self.gray_convert:
             self.frame = cv2.cvtColor(self.frame, cv2.COLOR_BGR2GRAY)
         self.frame = np.array(self.frame)
@@ -380,39 +381,7 @@ class Segmenter():
             self.ROIlist.append([i,area,bbox,mAR])
         self.ret = True
         return self.ret,self.ROIlist
-'''
-class ROIwriter():
-    def __init__(self,pars={}):
-        self.pars = {'export_file':None,'fmt':'fos-part',
-                     'export_ROIs':False,'output_dir':None,'output_prefix':None,'ROIpad':5}
-        if bool(pars):
-            self.pars.update(pars)
-        if bool(self.pars['export_ROIs']:
-            if bool(self.pars['output_dir']) == False:
-                print('ROIwrite init failed: an ouput directory is required...')
-                return False, None
-            if bool(self.pars['output_prefix']) == False:
-                print('ROIwrite init failed: an ouput prefix is required...')
-                return False, None
-        if bool(self.pars['export_file']:
-            self.outfile = open(self.pars['export_file'],'w')
-            self.outfile.write(part_hdrs[self.pars['fmt']])
-        
-                
-    def apply(self,ROIlist):
-        self.ret = False
-        self.ROIlist = ROIlist
-        # Parse ROIs from contours
-        for i,roi_stats in enumerate(self.ROIlist):
-                [i,area,bbox,mAR] = roi_stats
-                if bool(self.pars['export_file']:
-                    self.outfile.write(part_fmts[self.pars['fmt']])
-                if bool(self.pars['export_ROIs']:
-                        output_suffix = f'_'
-                        ROIfilename = os.path.join(self.pars['output_dir'],self.pars['output_prefix'],output_suffix)
-        self.ret = True
-        return self.ret,self.ROIlist
-'''    
+
 
 class VideoProcessor():
     """
@@ -425,11 +394,10 @@ class VideoProcessor():
     rounding errors. As a final step, it is converted to the original uint8
     data type.
     """
-    def __init__(self, video_name = None, image_dir = None,
-                 pars=None,proc_seq=[],proc_objs=[],verbosity=1):
+    def __init__(self,pars=None,proc_seq=[],proc_objs=[]):
         self.pars = {'export_file':None,'fmt':'fos-part',
                      'export_ROIs':False,'output_dir':None,'output_prefix':None,'ROIpad':5,
-                     'retain_result':None}
+                     'retain_result':1,'verbosity':1}
         if bool(pars):
             self.pars.update(pars)
         if bool(self.pars['export_ROIs']):
@@ -444,60 +412,100 @@ class VideoProcessor():
             self.outfile.write(part_hdrs[self.pars['fmt']])
 
         self.proc_seq = proc_seq
+        self.proc_seq.append(['VideoProcessor',pars])
         self.proc_objs = proc_objs
+        self.proc_objs.append('VP') # placeholder
 
-        self.verbosity = verbosity
+        self.verbosity = self.pars['verbosity']
         self.frame_count = 0
         self.ROIlist = []
 
-    #def addProcessStep(self,ps_type,pars={}):
-    #    self.proc_seq.append([ps_type,pars])
+    def load_seq(self,filename='VP.json'):
+        print(f'Loading json VideoProcess sequence file {filename}...')
+        seq_file = open(filename,'r')
+        proc_seq = json.load(seq_file)
+        seq_file.close()
+        print('...completed')
+        print('Implementing loaded sequence:')
+        for proc,pars in proc_seq:
+            print(proc,pars)
+            if proc == 'VideoProcessor':
+                self.proc_obj = ['VP']
+            elif proc == 'FrameSequence':
+                fseq = FrameSequence(pars=pars)
+                self.addFrameSequence(fseq,pars=pars)
+            elif proc == 'TemporalFilter':
+                self.addTemporalFilter(pars=pars)
+            elif proc == 'SpatialFilter':
+                self.addSpatialFilter(pars=pars)
+            elif proc == 'BinaryFrame':
+                self.addBinaryFrame(pars=pars)
+            elif proc == 'Segmenter':
+                self.addSegmenter(pars=pars)
+        
+
+    def save_seq(self,filename='VP.json'):
+        print(f'Saving json VideoProcess sequence file {filename}...')
+        with open(filename,'w') as seq_file:
+            self.jstr = json.dump(self.proc_seq,seq_file,indent=2)
+        seq_file.close()
+        print('...completed')
         
     def addFrameSequence(self,fseq,pars={}):
-        #self.proc_seq.append(['FrameSequence',pars])
+        print('Adding FrameSequence')
         self.fseq = fseq
+        self.proc_seq.append(['FrameSequence',fseq.pars])
+        self.proc_objs.append(fseq)  # placeholder
         self.ret,self.frame = self.fseq.initialize()
 
     def addTemporalFilter(self,pars={}):
+        print('Adding TemporalFilter')
         self.proc_seq.append(['TemporalFilter',pars])
         self.proc_objs.append(TemporalFilter(self.frame,pars=pars))
 
     def addSpatialFilter(self,pars={}):
+        print('Adding SpatialFilter')
         self.proc_seq.append(['SpatialFilter',pars])
         self.proc_objs.append(SpatialFilter(pars=pars))
 
     def addBinaryFrame(self,pars={}):
+        print('Adding BinaryFrame')
         self.proc_seq.append(['BinaryFrame',pars])
         self.proc_objs.append(BinaryFrame(pars=pars))
         
     def addSegmenter(self,pars={}):
+        print('Adding Segmenter')
         self.proc_seq.append(['Segmenter',pars])
         self.proc_objs.append(Segmenter(pars=pars))
         
-    def addROIwriter(self,pars={}):
-        self.proc_seq.append(['ROIwriter',pars])
-        self.proc_objs.append(ROIwriter(pars=pars))
-        
     def processFrame(self,inframe=None):
-        if bool(inframe):
-            ret = True
-            self.result = inframe
-        else:
-            ret,self.result = self.fseq.nextFrame()
+        # Direct input of images is broken by moving fseq
+        #if bool(inframe):
+        #    ret = True
+        #    self.result = inframe
+        #else:
+        #    ret,self.result = self.fseq.apply()
         # Save specified frame for extracting ROIs
-        if not bool(self.pars['retain_result']):
-            self.retain_result = self.result.copy()
+        #if not bool(self.pars['retain_result']):
+        #    self.retain_result = self.result.copy()
         self.frame_count += self.fseq.interval
+        self.result = None
         #self.frame_count += 1
         for i,proc_obj in enumerate(self.proc_objs):
-            if not ret:
-                return False, None
+            # The proc_objs entry for the VideoProcessor exists only to synchronize
+            # with the proc_seq list, which has necessary parameters; so skip it
+            print(i,proc_obj)
+            if proc_obj == 'VP':
+                continue
             print(f'Processing step {i}')
             ret,self.result = proc_obj.apply(self.result)
+            if not ret:
+                return False, None
             # Save specified frame for extracting ROIs
             if self.pars['retain_result'] == i:
                 print('retaining result, i = {i}, proc = {self.proc_seq[i][0]}')
                 self.retain_result = self.result.copy()
+            # After a call to the Segmenter, save the resulting ROIlist
             if self.proc_seq[i][0] == 'Segmenter':
                 self.ROIlist = proc_obj.ROIlist
         return ret,self.result

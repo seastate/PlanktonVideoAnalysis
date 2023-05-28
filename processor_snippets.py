@@ -17,7 +17,7 @@ fseq = FrameSequence(pars={'video_file':video_file,'init':False,'gray_convert':F
                  'frame_pointer':0,'interval':20,'fs_type':None,
                  'float_convert':True,'fps':20.})
 
-vp = VideoProcessor(verbosity=3,pars={'retain_result':0,
+vp = VideoProcessor(pars={'retain_result':2,'verbosity':3,
                  'export_file':'test.fos-part','export_ROIs':True,'output_dir':'TMP', 'output_prefix':'test','display':True})
 
 vp.addFrameSequence(fseq,pars={})
@@ -29,6 +29,20 @@ vp.addSegmenter(pars={'display':True})
 #vp.addROIwriter(pars={'export_file':'test.fos-part','export_ROIs':True,'output_dir':'TMP', 'output_prefix':'test','display':True})
 
 vp.processSequence()
+
+
+vp.save_seq()
+
+
+vp2 = VideoProcessor()
+vp2.load_seq()
+vp2.processSequence()
+
+vp2.save_seq(filename='VP2.json')
+
+vp3 = VideoProcessor()
+vp3.load_seq(filename='VP2.json')
+vp3.processSequence()
 
 
 #============================================================================================
