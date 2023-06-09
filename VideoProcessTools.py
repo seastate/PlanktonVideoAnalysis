@@ -14,24 +14,40 @@ part_fmts = {'fos-part':'f"{self.fseq.frame_pointer},{self.fseq.time},1,{mAR[1][
 }
 part_hdrs = {'fos-part':"% Frame #, Time, Camera #, X, Y, Area, Particle #, Bounding Box Width, Bounding Box Height, Min Dim, Max Dim, Min Dim Angle, Max Dim Angle, Max / Min, Length, Length Angle, Width, Width Angle, Length / Width"}
 
-#[99, 11.0, (241, 623, 7, 6), ((243.70004272460938, 625.6000366210938), (7.155416965484619, 3.130495071411133), 26.56505012512207)]
-
-#% Frame #, Time, Camera #, X, Y, Area, Particle #, Bounding Box Width, Bounding Box Height, Min Dim, Max Dim, Min Dim Angle, Max Dim Angle, Max / Min, Length, Length Angle, Width, Width Angle, Length / Width
-
-#part_str =  "%i,%f,%i,%f,%f,%i,%i,%i,%i,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f" % \
-#    (self.fseq.frame_pointer, self.time, self.cameraNo, self.pos.x, self.pos.y, self.area, self.partNo, self.boundWidth, self.boundHeight, self.minDim, self.maxDim, self.minDimAngle, self.maxDimAngle, self.max2min, self.length, self.lengthAngle, self.width, self.widthAngle, self.length2width)
-
 
 
 class TemporalFilter():
     """
     A class to implement accumulation of a background frame through temporal 
     filtering, and its use to isolate foreground (moving objects in video
-    analysis). It is assumed that frame arrays have been converted to float,
+    analysis). Uses include:
+        (a) Subtraction of a slowly evolving background to emphasize a
+            quickly evolving foreground; and,
+        (b) Substitution of a temporally-filtered frame sequence to remove
+            frame-rate noise and other short time scale interference.
+    The temporal filter frame is updated by a weighted sum of the pre-existing
+    temporal filter frame and a new frame from the image sequence. The relative
+    weights, and therefore the timescale of change for the temporal filter frame,
+    is determined by the parameter alpha, which must be in the interval [0,1].
+    The temporal filter frame approaches the current image sequence frame at an
+    exponential timescale of approximately 1/alpha.
+
+    It is assumed that frame arrays have been converted to float,
     to avoid cumulative rounding errors.
     """
     def __init__(self,init_frame,pars={}):
-        # default aprameters
+        """
+        Create a TemporalFilter instance. 
+
+        Parameters are stored in the `pars' dictionary attribute, with some defaults 
+        set at initialization, that are superceded by pars dictionary argument (if any).
+
+        Class methods perform three basic functions:
+            -- Update the temporal filter frame
+            -- Apply the temporal filter to a new frame, by replacement or subtraction
+            -- Display the current temporal filter frame
+        """
+        # Set default parameters
         self.pars = {'alpha':0.1,'offset':128,
                      'mode':'subtract','update':True,'display':False}
         if bool(pars):
@@ -43,10 +59,17 @@ class TemporalFilter():
                 self.fig2 = plt.figure()
 
     def update(self,frame):
+        """
+        Calculate a weighted sum of the existing temporal filter
+        frame (TFframe) and the frame submitted as an argument.
+        """
         self.TFframe = (1.-self.pars['alpha'])*self.TFframe + \
                         self.pars['alpha']*frame
 
     def display(self):
+        """
+        Display the current temporal filter frame (TFframe).
+        """
         plt.figure(self.fig)
         self.fig.clf()
         if len(self.TFframe.shape) == 3: # A color image...
@@ -70,6 +93,14 @@ class TemporalFilter():
 
         
     def apply(self,frame):
+        """
+        Apply the current temporal filter frame (TFframe) to the frame submitted as an
+        argument. If mode is "subtract", the returned image is the submitted frame minus
+        the temporal filter frame. If mode is "replace", the returned image is the temporal
+        filter frame. If the scalar "offset" is not None, it is added to each pixel value 
+        to mitigate under- or over-running the [0,255] interval for uint8 variables 
+        (typically useful for "subtract" mode).
+        """
         self.ret = False
         if self.pars['update'] == True:
             self.update(frame)
@@ -93,9 +124,33 @@ class SpatialFilter():
     """
     A class to implement accumulation of a background frame through spatial 
     filtering, and its use to isolate foreground (moving objects in video
-    analysis).
+    analysis). Uses include:
+        (a) Subtraction of a diffuse or large-scale  background to emphasize 
+            small-scale foreground features; and,
+        (b) Substitution of a spatially-filtered frame sequence to remove
+            pixel-scale noise and other short spatial scale interference.
+    The spatial filter frame is determined by a convolution with a filter kernel,
+    as for example a uniform disk. This convolution suppresses features small in 
+    length scale compared to the disk radius. 
+
+    Currently only disk kernels are implemented.
+
+    It is assumed that frame arrays have been converted to float,
+    to avoid cumulative rounding errors.
     """
     def __init__(self,pars={}):
+        """
+        Create a SpatialFilter instance. 
+
+        Parameters are stored in the `pars' dictionary attribute, with some defaults 
+        set at initialization, which are superceded by pars dictionary argument (if any).
+
+        Class methods perform four basic functions:
+            -- Define the convolution kernel.
+            -- Update the temporal filter frame
+            -- Apply the temporal filter to a new frame, by replacement or subtraction
+            -- Display the current temporal filter frame
+        """
         # default parameters
         self.pars={'n':11,'r':5,'ftype':'disk','offset':0,
                    'fillvalue':0,'plot_matrix':False,'verbose':False,
@@ -111,6 +166,9 @@ class SpatialFilter():
                 self.fig2 = plt.figure()
 
     def getSF(self,frame,return_sf=False):
+        """
+        Apply the current convolution kernel to the frame submitted as an argument.
+        """
         self.ret = False
         #self.frame_float = frame.astype('float')
         #
@@ -130,6 +188,9 @@ class SpatialFilter():
             return self.ret,self.SFframe
 
     def getFilter(self,pars={}):
+        """
+        Generate a convolution kernel or read one from a file (not yet implemented).
+        """
         self.conv_matrix = None
         if bool(pars):
             self.pars.update(pars)
@@ -145,6 +206,13 @@ class SpatialFilter():
             self.pars.update({'plot_matrix':False})
 
     def getDiskFilter(self,verbose=False):
+        """
+        Generate a disk convolution kernel, as specified by the parameters
+        n (size of the square kernel, in pixels) and offset (the sum of the 
+        kernel matrix entries). Offset > 0 is typically used only in subtraction
+        mode, to mitigate under- or over-running the [0,255] interval for uint8
+        variables
+        """
         self.offset = self.pars['offset']
         self.conv_matrix = np.zeros([self.pars['n'],self.pars['n']])
         self.n_mid = floor(self.pars['n']/2)
@@ -163,6 +231,9 @@ class SpatialFilter():
             print(self.conv_matrix)
 
     def display(self):
+        """
+        Display the current spatial filter frame (SFframe).
+        """
         plt.figure(self.fig)
         self.fig.clf()
         if len(self.SFframe.shape) == 3: # A color image...
@@ -185,6 +256,14 @@ class SpatialFilter():
         plt.pause(1e-2)
         
     def apply(self,frame):
+        """
+        Apply the current spatial filter frame (SFframe) to the frame submitted as an
+        argument. If mode is "subtract", the returned image is the submitted frame minus
+        the spatial filter frame. If mode is "replace", the returned image is the spatial
+        filter frame. If the scalar "offset" is not None, it is added to each pixel value 
+        to mitigate under- or over-running the [0,255] interval for uint8 variables 
+        (typically useful for "subtract" mode).
+        """
         self.ret = False
         if self.pars['update']:
             self.getSF(frame)
@@ -208,7 +287,33 @@ class SpatialFilter():
 class FrameSequence():
     """
     A class to facilitate work combining images sequences, frames in videos and
-    lists of image files during image processing.
+    lists of image files during image processing. A FrameSequence object provides
+    a standardized way to present sequences of images in directories, file lists
+    and videos for image processing, segmentation and generation of ROIs. Images
+    are returned and/or stored as numpy arrays.
+
+    The types of image sequences currently supported are:
+        -- "imseq": a list of sequential image file paths
+        -- "imfile": a file listing sequential image paths, in the directory source_dir
+        -- "vidfile": the path to a video file
+        -- "vidseq": a cv2 VideoCapture object
+    The image sequence type can be specified by the fs_type item in the
+    pars dictionary, or is inferred by the first non-None entry among
+    the image_sequence, image_file_list, video_sequence and video_file
+    items in the pars dictionary. 
+
+    Other arguments include:
+        -- init: If True, the image sequence is automatically initialized. If False, the 
+                 image sequence must be explicitly initialized.
+        -- return_frame: If True, initialization returns the resulting frame (and stores it 
+                  in the frame attribute. If False, it is stored but not returned (e.g., 
+                  when an object is being instantiated to be saved with a variable name).
+        -- "interval": The interval at which to return frames from the sequence(default: 1,
+                  i.e., return every frame).
+        -- "frame_pointer": the initial frame to return and/or store.
+        -- "fpd": frame per second for the image sequence
+        -- "float_convert": If True, the frame is converted to a numpy float array. If False,
+                  the native format (usually uint8) is preserved.
     """
     def __init__(self,pars={}):
         self.pars={'image_file_list':None,'image_sequence':None,
@@ -216,6 +321,17 @@ class FrameSequence():
                  'source_dir':None,'init':True,'gray_convert':False,
                  'frame_pointer':0,'interval':1,'fs_type':None,
                  'float_convert':False,'fps':30.}
+        """
+        Create a FrameSequence instance. 
+
+        Parameters are stored in the `pars' dictionary attribute, with some defaults 
+        set at initialization, which are superceded by pars dictionary argument (if any).
+
+        Class methods perform two basic functions:
+            -- Initialzie by opening files and loading an initial image
+            -- Apply the sequencing, by loading and returning and/or storing the next 
+               requested frame
+        """
         if bool(pars):
             self.pars.update(pars)
         self.image_file_list = self.pars['image_file_list']
@@ -254,6 +370,11 @@ class FrameSequence():
             self.initialize(return_frame=False)
         
     def initialize(self,return_frame=True):
+        """
+        Initialize the image sequence by opening a file if necessary, and loading
+        the first requested frame (the first, unless otherwise indicated by the
+        frame_pointer parameter.
+        """
         self.ret = False
         self.frame = None
         print('self.fs_type = ',self.fs_type,self.fs_type=='vidfil')
@@ -284,6 +405,9 @@ class FrameSequence():
             return self.ret,self.frame
     
     def apply(self,placeholder):
+        """
+        Load and return and/or store the next requested frame.
+        """
         self.ret = False
         self.frame = None
         try:
@@ -310,7 +434,26 @@ class FrameSequence():
 
 
 class BinaryFrame():
+    """
+    A class to implement thresholding (conversion of color or grayscale images
+    to black and white images. Pixel values in the interval [minThreshold,maxThreshold]
+    are set to 1; pixels outside that interval are set to 0.
+
+    Other items in the pars dictionary include:
+        -- "display": If True, display grayscale and binary images in the specified figures
+        -- "fill_holes": If True, flood-fill enclosed areas of 0's with 1's
+    """
     def __init__(self,pars={}):
+        """
+        Create a BinaryFrame instance. 
+
+        Parameters are stored in the `pars' dictionary attribute, with some defaults 
+        set at initialization, that are superceded by pars dictionary argument (if any).
+
+        Class methods perform two basic functions:
+            -- Apply the binary filter to a new frame
+            -- Display the current frame as grayscale and binary images
+        """
         # Default parameters
         self.pars = {'minThreshold':20,'maxThreshold':255,'display':False,'fill_holes':True,
                      'bin_fig_num':101,'gray_fig_num':102}
@@ -320,6 +463,9 @@ class BinaryFrame():
             self.fig = plt.figure()
 
     def apply(self,frame,return_bin=True):
+        """
+        Apply thresholding to the frame submitted as an argument.
+        """
         self.ret = False
         # Check if image is grayscale, or needs to be converted
         if len(frame.shape) == 3:
@@ -348,6 +494,9 @@ class BinaryFrame():
             return self.ret,self.bin_frame
 
     def display(self):
+        """
+        Display the results of thresholding the current frame.
+        """
         plt.figure(self.fig)
         self.fig.clf()
         plt.imshow(self.bin_frame,cmap='gray',vmin=0,vmax=255)
@@ -356,6 +505,13 @@ class BinaryFrame():
 
 
 class Segmenter():
+    """
+    A class to implement segmentation of images to identify objects and generate enclosing ROIs.
+    Typically, segmentation is applied here to binary images to enable visualization of the 
+    intermediate steps in an image processing sequence. Contours surrounding objects are
+    obtained using cv2's findContours utility, from which basic statistics (area, bounding
+    box, minimum enclosing rectangle) are saved for export, along with ROIs if requested.
+    """
     def __init__(self,pars={}):
         self.pars = {'minThreshold':20, 'maxThreshold':255, 'minArea':10, 'maxArea':5000,'ROIpad':5,
                      'display_ROIs':False,'display_blobs':False,'display_blobsCV':False,
@@ -385,16 +541,27 @@ class Segmenter():
 
 class VideoProcessor():
     """
-    A class implementing background subtraction and other processing of
-    videos and image sequences to facilitate tracking and classification
-    of moving objects.
+    A class implementing background subtraction, segmentation and other processing of
+    videos and image sequences to facilitate tracking and classification of moving
+    objects.
 
-    During processing, the active frame is propagated as a float array 
-    with the same dimensions as the original frame, to prevent cumulative
-    rounding errors. As a final step, it is converted to the original uint8
-    data type.
+    During processing, the active frame is propagated as a float array with the same
+    dimensions as the original frame, to prevent accumulation of rounding errors. As
+    a final step, it is converted to the original uint8 data type.
     """
     def __init__(self,pars=None,proc_seq=[],proc_objs=[]):
+        """
+        Create a VideoProcessor instance. 
+
+        Parameters are stored in the `pars' dictionary attribute, with some defaults 
+        set at initialization, that are superceded by pars dictionary argument (if any).
+
+        Class methods perform four basic functions:
+            -- Assemble a sequence consisting of image processing steps
+            -- Apply the processing sequence to one or more image sequence
+            -- Generate and load project files specifying processing sequences
+            -- Produce output files of particle statistics and ROIs
+        """
         self.pars = {'export_file':None,'fmt':'fos-part',
                      'export_ROIs':False,'output_dir':None,'output_prefix':None,'ROIpad':5,
                      'retain_result':1,'verbosity':1}
@@ -421,6 +588,9 @@ class VideoProcessor():
         self.ROIlist = []
 
     def load_seq(self,filename='VP.json'):
+        """
+        Load a project file in json format.
+        """
         print(f'Loading json VideoProcess sequence file {filename}...')
         seq_file = open(filename,'r')
         proc_seq = json.load(seq_file)
@@ -445,6 +615,9 @@ class VideoProcessor():
         
 
     def save_seq(self,filename='VP.json'):
+        """
+        Save a project file in json format.
+        """
         print(f'Saving json VideoProcess sequence file {filename}...')
         with open(filename,'w') as seq_file:
             self.jstr = json.dump(self.proc_seq,seq_file,indent=2)
@@ -452,6 +625,9 @@ class VideoProcessor():
         print('...completed')
         
     def addFrameSequence(self,fseq,pars={}):
+        """
+        Add a FrameSequence to the processing sequence.
+        """
         print('Adding FrameSequence')
         self.fseq = fseq
         self.proc_seq.append(['FrameSequence',fseq.pars])
@@ -459,38 +635,43 @@ class VideoProcessor():
         self.ret,self.frame = self.fseq.initialize()
 
     def addTemporalFilter(self,pars={}):
+        """
+        Add a temporal filter to the processing sequence.
+        """
         print('Adding TemporalFilter')
         self.proc_seq.append(['TemporalFilter',pars])
         self.proc_objs.append(TemporalFilter(self.frame,pars=pars))
 
     def addSpatialFilter(self,pars={}):
+        """
+        Add a spatial convolution filter to the processing sequence.
+        """
         print('Adding SpatialFilter')
         self.proc_seq.append(['SpatialFilter',pars])
         self.proc_objs.append(SpatialFilter(pars=pars))
 
     def addBinaryFrame(self,pars={}):
+        """
+        Add a thresholding filter to the processing sequence.
+        """
         print('Adding BinaryFrame')
         self.proc_seq.append(['BinaryFrame',pars])
         self.proc_objs.append(BinaryFrame(pars=pars))
         
     def addSegmenter(self,pars={}):
+        """
+        Add a segmenting filter to the processing sequence.
+        """
         print('Adding Segmenter')
         self.proc_seq.append(['Segmenter',pars])
         self.proc_objs.append(Segmenter(pars=pars))
         
-    def processFrame(self,inframe=None):
-        # Direct input of images is broken by moving fseq
-        #if bool(inframe):
-        #    ret = True
-        #    self.result = inframe
-        #else:
-        #    ret,self.result = self.fseq.apply()
-        # Save specified frame for extracting ROIs
-        #if not bool(self.pars['retain_result']):
-        #    self.retain_result = self.result.copy()
+    def processFrame(self):
+        """
+        Apply the current processing sequence to the current frame.
+        """
         self.frame_count += self.fseq.interval
         self.result = None
-        #self.frame_count += 1
         for i,proc_obj in enumerate(self.proc_objs):
             # The proc_objs entry for the VideoProcessor exists only to synchronize
             # with the proc_seq list, which has necessary parameters; so skip it
@@ -511,6 +692,9 @@ class VideoProcessor():
         return ret,self.result
     
     def outputFrame(self):
+        """
+        Output analysis results to the terminal and files as specified.
+        """
         if self.verbosity>0:
             print(f'Frame number, time = {self.fseq.frame_pointer}, {self.fseq.time}')
         if self.verbosity > 2:
@@ -542,10 +726,16 @@ class VideoProcessor():
                 print('imwrite ret = ',ret)
 
     def cleanup(self):
+        """
+        Close files and perform other cleanup as needed.
+        """
         if bool(self.pars['export_file']):
             self.outfile.close()
                 
     def processSequence(self,maxFrame=5000):
+        """
+        Execute the processing sequence to an entire set of images.
+        """
         count = 0
         while count<maxFrame:
             ret,self.frame = self.processFrame()
