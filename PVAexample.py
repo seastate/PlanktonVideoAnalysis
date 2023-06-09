@@ -1,10 +1,9 @@
 """
-An example of scripted image processing and segmentation of particles in image sequences. The first set of commands
-specifies a sequence of image analysis steps and a video file to which to apply them. The second set of commands
-illustrates loading and executing a saved analysis sequence.
+An example of scripted image processing and segmentation of particles in image sequences. This set of commands
+specifies a sequence of image analysis steps and a video file to which to apply them.
 """
 # Import classes from the VideoProcessTools module
-from VideoProcessTools import FrameSequence, TemporalFilter, SpatialFilter, BinaryFrame, Segmenter, VideoProcessor
+from VideoProcessTools import FrameSequence, VideoProcessor
 # Specify a video file to process
 video_file = 'myVideo1.avi'
 # Instatiate a frame sequence to handle frames from the video
@@ -25,9 +24,3 @@ vp.addSegmenter(pars={'display':True})
 vp.processSequence()
 # Save the analysis sequence in json format
 vp.save_seq(filename='VP.json')
-# Define a new video processor object
-vp2 = VideoProcessor()
-# Load the saved processing sequence
-vp2.load_seq(filename='VP.json')
-# Execute the processing sequence
-vp2.processSequence()
