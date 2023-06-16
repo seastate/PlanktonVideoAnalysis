@@ -564,7 +564,7 @@ class VideoProcessor():
         """
         self.pars = {'export_file':None,'fmt':'fos-part',
                      'export_ROIs':False,'output_dir':None,'output_prefix':None,'ROIpad':5,
-                     'retain_result':1,'verbosity':1}
+                     'retain_result':1,'verbosity':1,'blur_min':1.,'range_min':0.}
         if bool(pars):
             self.pars.update(pars)
         if bool(self.pars['export_ROIs']):
@@ -701,30 +701,50 @@ class VideoProcessor():
             print(self.result)
         # Output of ROIs (if any) to stats file and image directory
         for i,roi_stats in enumerate(self.ROIlist):
-            print('Got here: ',i,roi_stats)
+            #print('Got here: ',i,roi_stats)
             [i,area,bbox,mAR] = roi_stats
             if bool(self.pars['export_file']):
                 output_format = eval(part_fmts[self.pars['fmt']])+'\n'
-                print(output_format)
+                #print(output_format)
                 self.outfile.write(output_format)
             if bool(self.pars['export_ROIs']):
                 # Calculate ROI for export
-                ns = self.retain_result.shape  # these may be backwards!
+                ns = self.retain_result.shape 
                 ny,nx = ns[0:2]
                 i_beg=np.max([bbox[0]-self.pars['ROIpad'],0])
                 i_end=np.min([bbox[0]+bbox[2]+self.pars['ROIpad'],nx-1])
                 j_beg=np.max([bbox[1]-self.pars['ROIpad'],0])
                 j_end=np.min([bbox[1]+bbox[3]+self.pars['ROIpad'],ny-1])
-                print(i_beg,i_end,j_beg,j_end)
-                output_filename = f"{self.pars['output_prefix']}_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}.tif"
-                self.ROIfilename = os.path.join(self.pars['output_dir'],output_filename)
-                #output_suffix = f'_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}.tif'
-                #self.ROIfilename = os.path.join(self.pars['output_dir'],self.pars['output_prefix'],output_suffix)
                 self.ROIimage = self.retain_result[j_beg:j_end,i_beg:i_end]
+                range_stat = self.ROIimage.max()-self.ROIimage.min()
+                if range_stat < self.pars['range_min']:
+                    continue
+                blur_stat = self.focus_index(self.ROIimage)
+                if blur_stat < self.pars['blur_min']:
+                    continue
+                #print(i_beg,i_end,j_beg,j_end)
+                output_filename = \
+                f"{self.pars['output_prefix']}_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}_{blur_stat}_{range_stat}.png"
+                #f"{self.pars['output_prefix']}_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}_{blur_stat}.png"
+                #output_filename = f"{self.pars['output_prefix']}_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}_{blur_stat}.tif"
+                #output_filename = f"{self.pars['output_prefix']}_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}.tif"
+                self.ROIfilename = os.path.join(self.pars['output_dir'],output_filename)
+                ##output_suffix = f'_f{self.fseq.frame_pointer}_n{i}_b{bbox[0]}_{bbox[1]}_{bbox[2]}_{bbox[3]}.tif'
+                ##self.ROIfilename = os.path.join(self.pars['output_dir'],self.pars['output_prefix'],output_suffix)
+                #self.ROIimage = self.retain_result[j_beg:j_end,i_beg:i_end]
                 print('writing roi: ',self.ROIfilename)
                 ret = cv2.imwrite(self.ROIfilename,np.round(self.ROIimage).astype('uint8'))
-                print('imwrite ret = ',ret)
+                #print('imwrite ret = ',ret)
 
+    def focus_index(self,roi):
+        """
+        A simple statistic to assess focus.
+        """
+        float_roi = roi.astype('float')
+        blurred_roi = cv2.GaussianBlur(roi,(3,3),cv2.BORDER_ISOLATED)
+        blur_stat = np.mean(np.abs((float_roi-blurred_roi)/(blurred_roi+1.e-6)))
+        return blur_stat
+        
     def cleanup(self):
         """
         Close files and perform other cleanup as needed.
