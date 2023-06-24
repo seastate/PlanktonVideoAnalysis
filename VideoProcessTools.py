@@ -10,10 +10,11 @@ from math import floor,sqrt
 import json
 
 # Dictionaries of output headers and formats
-part_fmts = {'fos-part':'f"{self.fseq.frame_pointer},{self.fseq.time},1,{mAR[1][0]},{mAR[1][0]},{area},{i},{bbox[2]},{bbox[3]},{min(mAR[1])},{max(mAR[1])},{mAR[2]+90.},{mAR[2]},{mAR[1][1]/(mAR[1][0]+1.e-16)},{mAR[1][1]},{mAR[2]+90.},{mAR[1][0]},{mAR[2]},{mAR[2]},{mAR[1][1]/(mAR[1][0]+1.e-16)}"'
+part_fmts = {'fos-part':'f"{self.fseq.frame_pointer} {self.fseq.time} 1 {mAR[0][0]} {mAR[0][1]} {area} {i} {bbox[2]} {bbox[3]} {min(mAR[1])} {max(mAR[1])} {mAR[2]+90.} {mAR[2]} {mAR[1][1]/(mAR[1][0]+1.e-16)} {mAR[1][1]} {mAR[2]+90.} {mAR[1][0]} {mAR[2]} {mAR[2]} {mAR[1][1]/(mAR[1][0]+1.e-16)}"'
 }
 part_hdrs = {'fos-part':"% Frame #, Time, Camera #, X, Y, Area, Particle #, Bounding Box Width, Bounding Box Height, Min Dim, Max Dim, Min Dim Angle, Max Dim Angle, Max / Min, Length, Length Angle, Width, Width Angle, Length / Width\n"}
 
+part_frm_mrk = {'fos-part':'f"{self.fseq.frame_pointer} {self.fseq.time} 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"'}
 
 
 class TemporalFilter():
@@ -586,6 +587,7 @@ class VideoProcessor():
         self.verbosity = self.pars['verbosity']
         self.frame_count = 0
         self.ROIlist = []
+        self.ROIcounter = 0
 
     def load_seq(self,filename='VP.json'):
         """
@@ -699,17 +701,18 @@ class VideoProcessor():
             print(f'Frame number, time = {self.fseq.frame_pointer}, {self.fseq.time}')
         if self.verbosity > 2:
             print(self.result)
-        # add header line to frame
-        #########
-        if bool(self.pars['export_file']):
-                output_format = eval(part_fmts[self.pars['fmt']])+'\n'
-                #print(output_format)
-                self.outfile.write(output_format)
         # Output of ROIs (if any) to stats file and image directory
-        for i,roi_stats in enumerate(self.ROIlist):
-            #print('Got here: ',i,roi_stats)
-            [i,area,bbox,mAR] = roi_stats
+        for j,roi_stats in enumerate(self.ROIlist):
+            #print('Got here: ',j,roi_stats)
+            [ii,area,bbox,mAR] = roi_stats
+            self.ROIcounter += 1
+            i = self.ROIcounter
             if bool(self.pars['export_file']):
+                #print('roi # ',j, i)
+                if j == 0: # insert new frame marker
+                    output_frame_mark = eval(part_frm_mrk[self.pars['fmt']])+'\n'
+                    #print('output_frame_mark = ',output_frame_mark)
+                    self.outfile.write(output_frame_mark)
                 output_format = eval(part_fmts[self.pars['fmt']])+'\n'
                 #print(output_format)
                 self.outfile.write(output_format)
