@@ -421,6 +421,9 @@ class FrameSequence():
             elif self.fs_type in ['vidseq','vidfil']:
                 for i in range(self.interval):
                     self.ret,self.frame = self.video_sequence.read()
+                    if not self.ret:
+                        self.frame = None
+                        return self.ret,self.frame
             else:
                 print('Unrecognized fs_type in FrameSequence.apply...')
         except Exception as e:
