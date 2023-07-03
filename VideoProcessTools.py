@@ -8,14 +8,16 @@ from time import sleep
 from scipy import signal
 from math import floor,sqrt
 import json
+from matplotlib.patches import Rectangle, Circle, Polygon, Ellipse
 
 # Dictionaries of output headers and formats
-part_fmts = {'fos-part':'f"{self.fseq.frame_pointer} {self.fseq.time} 1 {mAR[0][0]} {mAR[0][1]} {area} {i} {bbox[2]} {bbox[3]} {min(mAR[1])} {max(mAR[1])} {mAR[2]+90.} {mAR[2]} {mAR[1][1]/(mAR[1][0]+1.e-16)} {mAR[1][1]} {mAR[2]+90.} {mAR[1][0]} {mAR[2]} {mAR[2]} {mAR[1][1]/(mAR[1][0]+1.e-16)}"'
+part_fmts = {'fos-part':'f"{self.fseq.frame_pointer} {self.fseq.time} 1 {MAR[0][0]} {MAR[0][1]} {area} {i} {bbox[2]} {bbox[3]} {min(MAR[1])} {max(MAR[1])} {MAR[2]+90.} {MAR[2]} {MAR[1][1]/(MAR[1][0]+1.e-16)} {MAR[1][1]} {MAR[2]+90.} {MAR[1][0]} {MAR[2]} {MAR[2]} {MAR[1][1]/(MAR[1][0]+1.e-16)}"'
 }
 part_hdrs = {'fos-part':"% Frame #, Time, Camera #, X, Y, Area, Particle #, Bounding Box Width, Bounding Box Height, Min Dim, Max Dim, Min Dim Angle, Max Dim Angle, Max / Min, Length, Length Angle, Width, Width Angle, Length / Width\n"}
 
 part_frm_mrk = {'fos-part':'f"{self.fseq.frame_pointer} {self.fseq.time} 1 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0"'}
 
+plt_pad=0.05
 
 class TemporalFilter():
     """
@@ -58,6 +60,7 @@ class TemporalFilter():
             self.fig = plt.figure()
             if self.pars['mode'] == 'subtract':
                 self.fig2 = plt.figure()
+        self.frameno = None
 
     def update(self,frame):
         """
@@ -79,21 +82,21 @@ class TemporalFilter():
             plt.imshow(np.round(self.TFframe).astype('uint8'),cmap='gray', vmin=0, vmax=255)
         # If subtract mode, also plot result
         if self.pars['mode'] == 'replace':
-            self.fig.canvas.manager.set_window_title(f'Temporal Filter result')
+            self.fig.canvas.manager.set_window_title(f'Temporal Filter result: Frame {self.frameno}')
         plt.pause(1e-2)
         if self.pars['mode'] == 'subtract':
-            self.fig.canvas.manager.set_window_title(f'Temporal Filter background')
+            self.fig.canvas.manager.set_window_title(f'Temporal Filter background: Frame {self.frameno}')
             plt.figure(self.fig2)
             self.fig2.clf()
             if len(self.result.shape) == 3: # A color image...
                 plt.imshow(np.round(self.result).astype('uint8'))
             else:
                 plt.imshow(np.round(self.result).astype('uint8'),cmap='gray', vmin=0, vmax=255)
-            self.fig2.canvas.manager.set_window_title(f'Temporal Filter result')
+            self.fig2.canvas.manager.set_window_title(f'Temporal Filter result: Frame {self.frameno}')
             plt.pause(1e-2)
 
         
-    def apply(self,frame):
+    def apply(self,frame,frameno=None):
         """
         Apply the current temporal filter frame (TFframe) to the frame submitted as an
         argument. If mode is "subtract", the returned image is the submitted frame minus
@@ -102,6 +105,7 @@ class TemporalFilter():
         to mitigate under- or over-running the [0,255] interval for uint8 variables 
         (typically useful for "subtract" mode).
         """
+        self.frameno = frameno
         self.ret = False
         if self.pars['update'] == True:
             self.update(frame)
@@ -165,6 +169,7 @@ class SpatialFilter():
             self.fig = plt.figure()
             if self.pars['mode'] == 'subtract':
                 self.fig2 = plt.figure()
+        self.frameno = None
 
     def getSF(self,frame,return_sf=False):
         """
@@ -242,11 +247,11 @@ class SpatialFilter():
         else:
             plt.imshow(np.round(self.SFframe).astype('uint8'),cmap='gray', vmin=0, vmax=255)
         if self.pars['mode'] == 'replace':
-            self.fig.canvas.manager.set_window_title(f'Spatial Filter result')
+            self.fig.canvas.manager.set_window_title(f'Spatial Filter result: Frame {self.frameno}')
         plt.pause(1e-2)
         # If subtract mode, also plot result
         if self.pars['mode'] == 'subtract':
-            self.fig.canvas.manager.set_window_title(f'Spatial Filter background')
+            self.fig.canvas.manager.set_window_title(f'Spatial Filter background: Frame {self.frameno}')
             plt.figure(self.fig2)
             self.fig2.clf()
             if len(self.result.shape) == 3: # A color image...
@@ -256,7 +261,7 @@ class SpatialFilter():
             self.fig2.canvas.manager.set_window_title(f'Spatial Filter result')
         plt.pause(1e-2)
         
-    def apply(self,frame):
+    def apply(self,frame,frameno=None):
         """
         Apply the current spatial filter frame (SFframe) to the frame submitted as an
         argument. If mode is "subtract", the returned image is the submitted frame minus
@@ -265,6 +270,7 @@ class SpatialFilter():
         to mitigate under- or over-running the [0,255] interval for uint8 variables 
         (typically useful for "subtract" mode).
         """
+        self.frameno = frameno
         self.ret = False
         if self.pars['update']:
             self.getSF(frame)
@@ -321,7 +327,7 @@ class FrameSequence():
                  'video_file':None,'video_sequence':None,
                  'source_dir':None,'init':True,'gray_convert':False,
                  'frame_pointer':0,'interval':1,'fs_type':None,
-                 'float_convert':False,'fps':30.}
+                   'float_convert':False,'fps':30.,'display':False}
         """
         Create a FrameSequence instance. 
 
@@ -369,7 +375,9 @@ class FrameSequence():
                   'fs_type to imseq, imfil, vidseq or vidfil')
         if self.pars['init']:
             self.initialize(return_frame=False)
-        
+        if bool(self.pars['display']):
+            self.fig = plt.figure()
+
     def initialize(self,return_frame=True):
         """
         Initialize the image sequence by opening a file if necessary, and loading
@@ -405,10 +413,11 @@ class FrameSequence():
         if return_frame:
             return self.ret,self.frame
     
-    def apply(self,placeholder):
+    def apply(self,placeholder,frameno=None):
         """
         Load and return and/or store the next requested frame.
         """
+        self.frameno = frameno
         self.ret = False
         self.frame = None
         try:
@@ -433,9 +442,24 @@ class FrameSequence():
         self.frame = np.array(self.frame)
         if self.float_convert:
             self.frame = self.frame.astype('float')
+        if self.pars['display']:
+            self.display()
         #self.ret = True # comment out to preserve the ret from imread
         return self.ret,self.frame
 
+    def display(self):
+        """
+        Display the current frame returned from the frame sequence.
+        """
+        plt.figure(self.fig)
+        self.fig.clf()
+        if len(self.frame.shape) == 3: # A color image...
+            plt.imshow(np.round(self.frame).astype('uint8'))
+        else:
+            plt.imshow(np.round(self.frame).astype('uint8'),cmap='gray', vmin=0, vmax=255)
+        #plt.imshow(self.frame)#,cmap='gray',vmin=0,vmax=255)
+        self.fig.canvas.manager.set_window_title(f'Frame Sequence result: Frame {self.frameno} {self.frame_pointer}')
+        plt.pause(1e-2)
 
 class BinaryFrame():
     """
@@ -460,16 +484,18 @@ class BinaryFrame():
         """
         # Default parameters
         self.pars = {'minThreshold':20,'maxThreshold':255,'display':False,'fill_holes':True,
-                     'bin_fig_num':101,'gray_fig_num':102}
+                     'bin_fig_num':101,'gray_fig_num':102,'display':False}
         if bool(pars):
             self.pars.update(pars)
         if bool(self.pars['display']):
             self.fig = plt.figure()
+        self.frameno = None
 
-    def apply(self,frame,return_bin=True):
+    def apply(self,frame,return_bin=True,frameno=None):
         """
         Apply thresholding to the frame submitted as an argument.
         """
+        self.frameno = frameno
         self.ret = False
         # Check if image is grayscale, or needs to be converted
         if len(frame.shape) == 3:
@@ -504,7 +530,7 @@ class BinaryFrame():
         plt.figure(self.fig)
         self.fig.clf()
         plt.imshow(self.bin_frame,cmap='gray',vmin=0,vmax=255)
-        self.fig.canvas.manager.set_window_title(f'Binary Frame result')
+        self.fig.canvas.manager.set_window_title(f'Binary Frame result: Frame {self.frameno}')
         plt.pause(1e-2)
 
 
@@ -518,15 +544,21 @@ class Segmenter():
     """
     def __init__(self,pars={}):
         self.pars = {'minThreshold':20, 'maxThreshold':255, 'minArea':10, 'maxArea':5000,'ROIpad':5,
-                     'display_ROIs':False,'display_blobs':False,'display_blobsCV':False,
+                     'display_ROIs':False,'display_blobs':False,'display_MARs':False,
                      'fig_numROI':102,'fig_numBLOB':103,'fig_numCTR':104}
         if bool(pars):
             self.pars.update(pars)
+        if bool(self.pars['display_ROIs']) or bool(self.pars['display_blobs']) or bool(self.pars['display_MARs']):
+            self.fig = plt.figure()
+        self.frameno = None
 
-    def apply(self,bin_frame):
+    def apply(self,bin_frame,frameno=None):
+        self.bin_frame = bin_frame
+        self.frameno = frameno
         self.ret = False
         ny,nx = bin_frame.shape  # these may be backwards!
         self.ROIlist=[] # clear ROI list at each call
+        self.CTRlist=[] # clear ROI list at each call
         # 
         self.contours, hierarchy = cv2.findContours(bin_frame, cv2.RETR_TREE, cv2.CHAIN_APPROX_NONE)
         # Parse ROIs from contours
@@ -537,11 +569,46 @@ class Segmenter():
             if area < self.pars['minArea'] or area > self.pars['maxArea']:
                 continue
             bbox=cv2.boundingRect(ctr)
-            mAR = cv2.minAreaRect(ctr)
-            self.ROIlist.append([i,area,bbox,mAR])
+            MAR = cv2.minAreaRect(ctr)
+            self.ROIlist.append([i,area,bbox,MAR])
+            self.CTRlist.append(ctr)
+        if bool(self.pars['display_ROIs']) or bool(self.pars['display_blobs']) or bool(self.pars['display_MARs']):
+            self.display()
         self.ret = True
         return self.ret,self.ROIlist
 
+    def display(self):
+        """
+        Display the results of thresholding the current frame.
+        """
+        plt.figure(self.fig)
+        self.fig.clf()
+        plt.imshow(self.bin_frame,cmap='gray',vmin=0,vmax=255)
+        self.fig.canvas.manager.set_window_title(f'Segmentation result: Frame {self.frameno}')
+        for j,ROIinfo in enumerate(self.ROIlist):
+            ctr = self.CTRlist[j]
+            if bool(self.pars['display_blobs']):
+                polygon = Polygon(np.squeeze(ctr, axis=1),True,linewidth=1,edgecolor='m',facecolor='none')
+                # Add the patch to the Axes
+                plt.gca().add_patch(polygon)
+            if bool(self.pars['display_ROIs']):
+                bbox=ROIinfo[2]
+                print(f'bbox: {bbox}')
+                rect = Rectangle((bbox[0],bbox[1]),bbox[2],bbox[3],
+                             linewidth=1,edgecolor='c',facecolor='none')
+                # Add the patch to the Axes
+                print(f'rect: {rect}')
+                plt.gca().add_patch(rect)
+            if bool(self.pars['display_MARs']):
+                print(f'raw MAR: {ROIinfo[3]}')
+                MAR = ROIinfo[3]
+                rotbox = np.int0(cv2.boxPoints(MAR))
+                minArea_poly = Polygon(rotbox, linewidth=1,edgecolor='r',facecolor='none')
+                # Add the patch to the Axes
+                plt.gca().add_patch(minArea_poly)
+        plt.tight_layout(pad=plt_pad)
+        self.fig.canvas.draw()
+        plt.pause(1e-2)
 
 class VideoProcessor():
     """
@@ -684,7 +751,7 @@ class VideoProcessor():
             if proc_obj == 'VP':
                 continue
             print(f'Processing step {i}')
-            ret,self.result = proc_obj.apply(self.result)
+            ret,self.result = proc_obj.apply(self.result,frameno=self.frame_count)
             if not ret:
                 return False, None
             # Save specified frame for extracting ROIs
@@ -707,7 +774,7 @@ class VideoProcessor():
         # Output of ROIs (if any) to stats file and image directory
         for j,roi_stats in enumerate(self.ROIlist):
             #print('Got here: ',j,roi_stats)
-            [ii,area,bbox,mAR] = roi_stats
+            [ii,area,bbox,MAR] = roi_stats
             self.ROIcounter += 1
             i = self.ROIcounter
             if bool(self.pars['export_file']):
