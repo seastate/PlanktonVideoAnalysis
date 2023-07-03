@@ -350,7 +350,7 @@ class FrameSequence():
         self.ret = None
         self.fps = self.pars['fps']
         # Add accounting for time
-        self.time = self.frame_pointer * self.fps
+        self.time = self.frame_pointer/self.fps
         
         # Set type of frame sequence. If not set explicitly, the type is determined
         # by the first of the following arguments that is not None:
